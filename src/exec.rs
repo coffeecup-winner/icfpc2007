@@ -25,10 +25,7 @@ type CanFinishEarly<T> = Result<T, EarlyFinish>;
 
 impl<'a> ExecutionState<'a> {
     fn new(dna: &'a [u8]) -> Self {
-        ExecutionState {
-            dna,
-            rna: vec![],
-        }
+        ExecutionState { dna, rna: vec![] }
     }
 
     fn pattern(&mut self) -> CanFinishEarly<Vec<PatternItem>> {
@@ -54,13 +51,11 @@ impl<'a> ExecutionState<'a> {
                 }
                 &[b'I', b'P', rest @ ..] => {
                     self.dna = rest;
-                    // TODO: nat()
-                    pat.push(PatternItem::Base(b'P'));
+                    pat.push(PatternItem::Skip(self.nat()?));
                 }
                 &[b'I', b'F', rest @ ..] => {
                     self.dna = rest;
-                    // TODO: consts
-                    pat.push(PatternItem::Base(b'P'));
+                    pat.push(PatternItem::Search(self.consts()));
                 }
                 &[b'I', b'I', b'P', rest @ ..] => {
                     self.dna = rest;
@@ -70,7 +65,7 @@ impl<'a> ExecutionState<'a> {
                 &[b'I', b'I', b'C', rest @ ..] | &[b'I', b'I', b'F', rest @ ..] => {
                     self.dna = rest;
                     if level == 0 {
-                        break Ok(pat)
+                        break Ok(pat);
                     }
                     level -= 1;
                     pat.push(PatternItem::GroupClose);
@@ -78,14 +73,59 @@ impl<'a> ExecutionState<'a> {
                 &[b'I', b'I', b'I', rest @ ..] => {
                     if rest.len() < 7 {
                         self.rna.extend(rest);
-                        break Err(EarlyFinish)
+                        break Err(EarlyFinish);
                     }
                     self.rna.extend(&rest[0..7]);
                     self.dna = &rest[8..];
                 }
-                _ => break Err(EarlyFinish)
+                _ => break Err(EarlyFinish),
             }
         }
+    }
+
+    fn nat(&mut self) -> CanFinishEarly<u32> {
+        // TODO: rewrite to avoid recursion
+        match &self.dna {
+            &[b'P', rest @ ..] => {
+                self.dna = rest;
+                Ok(0)
+            }
+            &[b'I', rest @ ..] | &[b'F', rest @ ..] => {
+                self.dna = rest;
+                Ok(2 * self.nat()?)
+            }
+            &[b'C', rest @ ..] => {
+                self.dna = rest;
+                Ok(2 * self.nat()? + 1)
+            }
+            _ => Err(EarlyFinish),
+        }
+    }
+
+    fn consts(&mut self) -> Vec<u8> {
+        let mut result = vec![];
+        loop {
+            match &self.dna {
+                &[b'C', rest @ ..] => {
+                    self.dna = rest;
+                    result.push(b'I');
+                }
+                &[b'F', rest @ ..] => {
+                    self.dna = rest;
+                    result.push(b'C');
+                }
+                &[b'P', rest @ ..] => {
+                    self.dna = rest;
+                    result.push(b'F');
+                }
+                &[b'I', b'C', rest @ ..] => {
+                    self.dna = rest;
+                    result.push(b'P');
+                }
+                _ => break,
+            }
+        }
+        result
     }
 }
 
@@ -97,5 +137,18 @@ mod tests {
     fn test_patterns() {
         use PatternItem::*;
         assert_eq!(ExecutionState::new(b"CIIC").pattern(), Ok(vec![Base(b'I')]));
+        assert_eq!(
+            ExecutionState::new(b"IIPIPICPIICICIIF").pattern(),
+            Ok(vec![GroupOpen, Skip(2), GroupClose, Base(b'P')]),
+        );
+        assert_eq!(
+            ExecutionState::new(b"IIPIPICPIICIFCFPICIIF").pattern(),
+            Ok(vec![
+                GroupOpen,
+                Skip(2),
+                GroupClose,
+                Search(b"ICFP".into_iter().map(|c| *c).collect())
+            ]),
+        );
     }
 }
