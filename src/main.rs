@@ -3,10 +3,12 @@ use std::{env, fs};
 mod build;
 mod exec;
 mod png_utils;
+mod types;
 
 use build::build;
 use exec::execute;
 use png_utils::write_bitmap_as_png;
+use types::to_u8_vec;
 
 fn usage() -> std::io::Result<()> {
     eprintln!("Usage:
@@ -25,7 +27,7 @@ fn main() -> std::io::Result<()> {
     match &command[..] {
         "execute" => {
             let rna = execute(b"", &fs::read(infile)?);
-            fs::write(outfile, rna)?;
+            fs::write(outfile, to_u8_vec(&rna))?;
         }
         "build" => {
             let bitmap = build(&fs::read(infile)?);

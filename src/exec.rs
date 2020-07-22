@@ -1,16 +1,18 @@
 use std::collections::VecDeque;
 use std::result::Result;
 
+use crate::types::*;
+
 struct ExecutionState {
-    dna: VecDeque<u8>,
-    rna: Vec<u8>,
+    dna: VecDeque<Base>,
+    rna: Vec<Base>,
 }
 
 #[derive(Debug, PartialEq)]
 enum PatternItem {
-    Base(u8),
+    Base(Base),
     Skip(u32),
-    Search(Vec<u8>),
+    Search(Vec<Base>),
     GroupOpen,
     GroupClose,
 }
@@ -22,25 +24,14 @@ impl std::fmt::Display for Pattern {
         for item in &self.0 {
             use PatternItem::*;
             match item {
-                Base(b) => match b {
-                    b'I' => write!(f, "I")?,
-                    b'C' => write!(f, "C")?,
-                    b'F' => write!(f, "F")?,
-                    b'P' => write!(f, "P")?,
-                    _ => panic!(),
-                },
+                Base(b) => write!(f, "{:?}", b)?,
                 Skip(n) => write!(f, "!{}", n)?,
                 Search(s) => {
-                    write!(f, "?")?;
+                    write!(f, "?\"")?;
                     for b in s {
-                        match b {
-                            b'I' => write!(f, "I")?,
-                            b'C' => write!(f, "C")?,
-                            b'F' => write!(f, "F")?,
-                            b'P' => write!(f, "P")?,
-                            _ => panic!(),
-                        }
+                        write!(f, "{:?}", b)?;
                     }
+                    write!(f, "\"")?;
                 }
                 GroupOpen => write!(f, "(")?,
                 GroupClose => write!(f, ")")?,
@@ -52,7 +43,7 @@ impl std::fmt::Display for Pattern {
 
 #[derive(Debug, PartialEq)]
 enum TemplateItem {
-    Base(u8),
+    Base(Base),
     Ref(u32, u32),
     Length(u32),
 }
@@ -64,13 +55,7 @@ impl std::fmt::Display for Template {
         for item in &self.0 {
             use TemplateItem::*;
             match item {
-                Base(b) => match b {
-                    b'I' => write!(f, "I")?,
-                    b'C' => write!(f, "C")?,
-                    b'F' => write!(f, "F")?,
-                    b'P' => write!(f, "P")?,
-                    _ => panic!(),
-                },
+                Base(b) => write!(f, "{:?}", b)?,
                 Ref(n, l) => write!(f, "\\{}:{}", n, l)?,
                 Length(n) => write!(f, "~{}", n)?,
             }
@@ -79,7 +64,7 @@ impl std::fmt::Display for Template {
     }
 }
 
-pub fn execute(prefix: &[u8], dna: &[u8]) -> Vec<u8> {
+pub fn execute(prefix: &[u8], dna: &[u8]) -> Vec<Base> {
     let mut state = ExecutionState::new(prefix, dna);
     state.execute().unwrap_err(); // The implementation can only return an expected "error"
     return state.rna;
@@ -92,8 +77,8 @@ type CanFinishEarly<T> = Result<T, EarlyFinish>;
 impl ExecutionState {
     fn new(prefix: &[u8], dna: &[u8]) -> Self {
         let mut dna_deque = VecDeque::with_capacity(prefix.len() + dna.len());
-        dna_deque.extend(prefix);
-        dna_deque.extend(dna);
+        dna_deque.extend(to_base_vec(prefix));
+        dna_deque.extend(to_base_vec(dna));
         ExecutionState {
             dna: dna_deque,
             rna: vec![],
@@ -199,13 +184,12 @@ impl ExecutionState {
         self.replace(template, &env);
     }
 
-    fn replace(&mut self, template: Template, env: &Vec<Vec<u8>>) {
+    fn replace(&mut self, template: Template, env: &Vec<Vec<Base>>) {
         let print = |&b| match b {
-            b'I' => 'I',
-            b'C' => 'C',
-            b'F' => 'F',
-            b'P' => 'P',
-            _ => panic!(),
+            I => 'I',
+            C => 'C',
+            F => 'F',
+            P => 'P',
         };
         for (i, p) in env.iter().enumerate() {
             println!(
@@ -246,29 +230,29 @@ impl ExecutionState {
         let mut level = 0;
         loop {
             match self.dna.pop_front().ok_or(EarlyFinish)? {
-                b'C' => pat.push(PatternItem::Base(b'I')),
-                b'F' => pat.push(PatternItem::Base(b'C')),
-                b'P' => pat.push(PatternItem::Base(b'F')),
-                b'I' => match self.dna.pop_front().ok_or(EarlyFinish)? {
-                    b'C' => pat.push(PatternItem::Base(b'P')),
-                    b'P' => pat.push(PatternItem::Skip(self.nat()?)),
-                    b'F' => {
+                C => pat.push(PatternItem::Base(I)),
+                F => pat.push(PatternItem::Base(C)),
+                P => pat.push(PatternItem::Base(F)),
+                I => match self.dna.pop_front().ok_or(EarlyFinish)? {
+                    C => pat.push(PatternItem::Base(P)),
+                    P => pat.push(PatternItem::Skip(self.nat()?)),
+                    F => {
                         self.dna.pop_front(); // Skip an extra base
                         pat.push(PatternItem::Search(self.consts()));
                     }
-                    b'I' => match self.dna.pop_front().ok_or(EarlyFinish)? {
-                        b'P' => {
+                    I => match self.dna.pop_front().ok_or(EarlyFinish)? {
+                        P => {
                             level += 1;
                             pat.push(PatternItem::GroupOpen);
                         }
-                        b'C' | b'F' => {
+                        C | F => {
                             if level == 0 {
                                 break Ok(Pattern(pat));
                             }
                             level -= 1;
                             pat.push(PatternItem::GroupClose);
                         }
-                        b'I' => {
+                        I => {
                             if self.dna.len() < 7 {
                                 self.rna.extend(self.dna.clone());
                                 self.dna.clear();
@@ -278,11 +262,8 @@ impl ExecutionState {
                                 self.rna.push(self.dna.pop_front().unwrap());
                             }
                         }
-                        _ => panic!("Invalid DNA string"),
                     },
-                    _ => panic!("Invalid DNA string"),
                 },
-                _ => panic!("Invalid DNA string"),
             }
         }
     }
@@ -291,19 +272,19 @@ impl ExecutionState {
         let mut result = vec![];
         loop {
             match self.dna.pop_front().ok_or(EarlyFinish)? {
-                b'C' => result.push(TemplateItem::Base(b'I')),
-                b'F' => result.push(TemplateItem::Base(b'C')),
-                b'P' => result.push(TemplateItem::Base(b'F')),
-                b'I' => match self.dna.pop_front().ok_or(EarlyFinish)? {
-                    b'C' => result.push(TemplateItem::Base(b'P')),
-                    b'F' | b'P' => {
+                C => result.push(TemplateItem::Base(I)),
+                F => result.push(TemplateItem::Base(C)),
+                P => result.push(TemplateItem::Base(F)),
+                I => match self.dna.pop_front().ok_or(EarlyFinish)? {
+                    C => result.push(TemplateItem::Base(P)),
+                    F | P => {
                         let l = self.nat()?;
                         result.push(TemplateItem::Ref(self.nat()?, l));
                     }
-                    b'I' => match self.dna.pop_front().ok_or(EarlyFinish)? {
-                        b'C' | b'F' => break Ok(Template(result)),
-                        b'P' => result.push(TemplateItem::Length(self.nat()?)),
-                        b'I' => {
+                    I => match self.dna.pop_front().ok_or(EarlyFinish)? {
+                        C | F => break Ok(Template(result)),
+                        P => result.push(TemplateItem::Length(self.nat()?)),
+                        I => {
                             if self.dna.len() < 7 {
                                 self.rna.extend(self.dna.clone());
                                 self.dna.clear();
@@ -313,11 +294,8 @@ impl ExecutionState {
                                 self.rna.push(self.dna.pop_front().unwrap());
                             }
                         }
-                        _ => panic!("Invalid DNA string"),
                     },
-                    _ => panic!("Invalid DNA string"),
                 },
-                _ => panic!("Invalid DNA string"),
             }
         }
     }
@@ -326,73 +304,71 @@ impl ExecutionState {
         let mut stack = vec![];
         loop {
             match self.dna.pop_front().ok_or(EarlyFinish)? {
-                b'P' => {
+                P => {
                     let mut result = 0;
                     for x in stack.into_iter().rev() {
                         result = result * 2 + x;
                     }
                     break Ok(result);
                 }
-                b'I' | b'F' => stack.push(0),
-                b'C' => stack.push(1),
-                _ => panic!("Invalid DNA string"),
+                I | F => stack.push(0),
+                C => stack.push(1),
             }
         }
     }
 
-    fn as_nat(mut n: u32) -> Vec<u8> {
+    fn as_nat(mut n: u32) -> Vec<Base> {
         let mut result = vec![];
         while n > 0 {
             if n % 2 == 0 {
-                result.push(b'I');
+                result.push(I);
             } else {
-                result.push(b'C');
+                result.push(C);
             }
             n /= 2;
         }
-        result.push(b'P');
+        result.push(P);
         result
     }
 
-    fn consts(&mut self) -> Vec<u8> {
+    fn consts(&mut self) -> Vec<Base> {
         let mut result = vec![];
         loop {
             if self.dna.is_empty() {
                 break;
             }
             match self.dna[0] {
-                b'C' => {
+                C => {
                     self.dna.pop_front();
-                    result.push(b'I');
+                    result.push(I);
                 }
-                b'F' => {
+                F => {
                     self.dna.pop_front();
-                    result.push(b'C');
+                    result.push(C);
                 }
-                b'P' => {
+                P => {
                     self.dna.pop_front();
-                    result.push(b'F');
+                    result.push(F);
                 }
-                b'I' => {
+                I => {
                     if self.dna.is_empty() {
                         break;
                     }
                     match self.dna[1] {
-                        b'C' => {
+                        C => {
                             self.dna.pop_front();
                             self.dna.pop_front();
-                            result.push(b'P');
+                            result.push(P);
                         }
                         _ => break,
                     }
                 }
-                _ => panic!("Invalid DNA string"),
             }
         }
         result
     }
 
-    fn protect(l: u32, d: &Vec<u8>) -> Vec<u8> {
+    fn protect(l: u32, d: &Vec<Base>) -> Vec<Base> {
         let mut result = d.clone();
         for _ in 0..l {
             result = Self::quote(&result);
@@ -400,15 +376,14 @@ impl ExecutionState {
         result
     }
 
-    fn quote(d: &Vec<u8>) -> Vec<u8> {
+    fn quote(d: &Vec<Base>) -> Vec<Base> {
         let mut result = vec![];
         for b in d {
             match b {
-                b'I' => result.push(b'C'),
-                b'C' => result.push(b'F'),
-                b'F' => result.push(b'P'),
-                b'P' => result.extend(b"IC"),
-                _ => panic!("Invalid DNA string"),
+                I => result.push(C),
+                C => result.push(F),
+                F => result.push(P),
+                P => result.extend(&[I, C]),
             }
         }
         result
@@ -424,11 +399,11 @@ mod tests {
         use PatternItem::*;
         assert_eq!(
             ExecutionState::new(b"", b"CIIC").pattern(),
-            Ok(Pattern(vec![Base(b'I')]))
+            Ok(Pattern(vec![Base(I)]))
         );
         assert_eq!(
             ExecutionState::new(b"", b"IIPIPICPIICICIIF").pattern(),
-            Ok(Pattern(vec![GroupOpen, Skip(2), GroupClose, Base(b'P')])),
+            Ok(Pattern(vec![GroupOpen, Skip(2), GroupClose, Base(P)])),
         );
         assert_eq!(
             ExecutionState::new(b"", b"IIPIPICPIICIFCCFPICIIF").pattern(),
@@ -436,7 +411,7 @@ mod tests {
                 GroupOpen,
                 Skip(2),
                 GroupClose,
-                Search(b"ICFP".into_iter().map(|c| *c).collect())
+                Search(vec![I, C, F, P])
             ])),
         );
     }
@@ -447,16 +422,16 @@ mod tests {
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, b"PICFC");
+        assert_eq!(state.dna, to_base_vec(b"PICFC"));
         state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, b"PIICCFCFFPC");
+        assert_eq!(state.dna, to_base_vec(b"PIICCFCFFPC"));
         state = ExecutionState::new(b"", b"IIPIPIICPIICIICCIICFCFC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, b"I");
+        assert_eq!(state.dna, to_base_vec(b"I"));
     }
 }
