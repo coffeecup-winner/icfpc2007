@@ -110,7 +110,7 @@ impl ExecutionState {
             println!("pattern: {}", pattern);
             println!("template: {}", template);
             self.match_replace(pattern, template);
-            println!("rna length: {}", self.rna.len());
+            println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
             println!();
             i += 1;
         }
@@ -148,7 +148,7 @@ impl ExecutionState {
                                 }
                             }
                             if is_match {
-                                i = j;
+                                i = j + s.len();
                                 success = true;
                                 break;
                             }
@@ -166,23 +166,29 @@ impl ExecutionState {
                     let mut result = vec![];
                     let start = *c.last().unwrap();
                     let end = i;
-                    let min = |a, b| if a > b { b } else { a };
+                    // TODO: fix the below
+                    //
                     if end <= left.len() {
                         result.extend_from_slice(&left[start..end]);
                     } else if start >= left.len() {
                         if !right.is_empty() {
-                            result.extend_from_slice(
-                                &right[min(start - left.len(), right.len() - 1)
-                                    ..min(end - left.len(), right.len())],
-                            );
+                            let start = start - left.len();
+                            let end = end - left.len();
+                            if start < left.len() {
+                                result.extend_from_slice(&right[start..end.min(right.len())]);
+                            }
                         }
                     } else {
                         result.extend_from_slice(&left[start..]);
+                        let end = end - left.len();
                         if !right.is_empty() {
-                            result
-                                .extend_from_slice(&right[0..min(end - result.len(), right.len())]);
+                            result.extend_from_slice(&right[0..end.min(right.len())]);
                         }
                     }
+                    // let mut data = vec![];
+                    // data.extend_from_slice(left);
+                    // data.extend_from_slice(right);
+                    // result.extend_from_slice(&data[start..end]);
                     env.push(result);
                     c.pop();
                 }

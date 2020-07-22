@@ -1,7 +1,7 @@
 use std::cell::Cell;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Position(pub u32, pub u32);
 
 impl std::fmt::Display for Position {
@@ -40,10 +40,13 @@ pub struct Bitmap {
 impl Bitmap {
     pub fn transparent() -> Self {
         Bitmap {
-            data: vec![Pixel {
-                rgb: BLACK,
-                a: TRANSPARENT,
-            }; 600 * 600],
+            data: vec![
+                Pixel {
+                    rgb: BLACK,
+                    a: TRANSPARENT,
+                };
+                600 * 600
+            ],
         }
     }
 
@@ -82,33 +85,40 @@ impl Bitmap {
         let old = self.get(Position(x, y));
         if old != new {
             let mut queue = VecDeque::new();
+            let mut visited = HashSet::new();
             queue.push_back(Position(x, y));
+            visited.insert(Position(x, y));
             while let Some(p) = queue.pop_front() {
                 self.set(p, new);
                 if x > 0 {
                     let left = p.move_(Direction::Left);
-                    if self.get(left) == old {
+                    if !visited.contains(&left) && self.get(left) == old {
                         queue.push_back(left);
+                        visited.insert(left);
                     }
                 }
                 if x < 599 {
                     let right = p.move_(Direction::Right);
-                    if self.get(right) == old {
+                    if !visited.contains(&right) && self.get(right) == old {
                         queue.push_back(right);
+                        visited.insert(right);
                     }
                 }
                 if y > 0 {
                     let up = p.move_(Direction::Up);
-                    if self.get(up) == old {
+                    if !visited.contains(&up) && self.get(up) == old {
                         queue.push_back(up);
+                        visited.insert(up);
                     }
                 }
                 if y < 599 {
                     let down = p.move_(Direction::Down);
-                    if self.get(down) == old {
+                    if !visited.contains(&down) && self.get(down) == old {
                         queue.push_back(down);
+                        visited.insert(down);
                     }
                 }
+                visited.insert(Position(x, y));
             }
         }
     }
@@ -359,8 +369,15 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
                 bitmaps[idx].fill(pos, bucket.current_pixel());
             }
             b"PCCPFFP" => {
-                println!("LAYER+");
-                bitmaps.push(Bitmap::transparent());
+                if bitmaps.len() < 10 {
+                    crate::png_utils::write_bitmap_as_png(
+                        bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                    )
+                    .unwrap();
+                    println!("LAYER+");
+                    bitmaps.push(Bitmap::transparent());
+                }
             }
             b"PFFPCCP" => {
                 println!("LAYER COMPOSE");
@@ -380,9 +397,10 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
             }
             _ => {}
         }
-        rna = &rna[8..];
+        rna = &rna[7..];
         i += 1;
     }
+    println!("Layers count: {}", bitmaps.len());
     bitmaps.pop().unwrap()
 }
 
