@@ -14,7 +14,41 @@ enum PatternItem {
     GroupOpen,
     GroupClose,
 }
-type Pattern = Vec<PatternItem>;
+#[derive(Debug, PartialEq)]
+struct Pattern(Vec<PatternItem>);
+
+impl std::fmt::Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for item in &self.0 {
+            use PatternItem::*;
+            match item {
+                Base(b) => match b {
+                    b'I' => write!(f, "I")?,
+                    b'C' => write!(f, "C")?,
+                    b'F' => write!(f, "F")?,
+                    b'P' => write!(f, "P")?,
+                    _ => panic!()
+                },
+                Skip(n) => write!(f, "!{}", n)?,
+                Search(s) => {
+                    write!(f, "?")?;
+                    for b in s {
+                        match b {
+                            b'I' => write!(f, "I")?,
+                            b'C' => write!(f, "C")?,
+                            b'F' => write!(f, "F")?,
+                            b'P' => write!(f, "P")?,
+                            _ => panic!()
+                        }
+                    }
+                }
+                GroupOpen => write!(f, "(")?,
+                GroupClose => write!(f, ")")?,
+            }
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum TemplateItem {
@@ -22,7 +56,28 @@ enum TemplateItem {
     Ref(u32, u32),
     Length(u32),
 }
-type Template = Vec<TemplateItem>;
+#[derive(Debug, PartialEq)]
+struct Template(Vec<TemplateItem>);
+
+impl std::fmt::Display for Template {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for item in &self.0 {
+            use TemplateItem::*;
+            match item {
+                Base(b) => match b {
+                    b'I' => write!(f, "I")?,
+                    b'C' => write!(f, "C")?,
+                    b'F' => write!(f, "F")?,
+                    b'P' => write!(f, "P")?,
+                    _ => panic!()
+                },
+                Ref(n, l) => write!(f, "\\{}:{}", n, l)?,
+                Length(n) => write!(f, "~{}", n)?,
+            }
+        }
+        Ok(())
+    }
+}
 
 pub fn execute(dna: &[u8]) -> Vec<u8> {
     let mut state = ExecutionState::new(dna);
@@ -43,29 +98,34 @@ impl ExecutionState {
     }
 
     fn execute(&mut self) -> CanFinishEarly<()> {
+        let mut i = 0;
         loop {
             let pattern = self.pattern()?;
             let template = self.template()?;
-            self.match_replace(&pattern, &template);
+            println!("iteration {}", i);
+            println!("pattern: {}", pattern);
+            println!("template: {}", template);
+            self.match_replace(pattern, template);
+            i += 1;
         }
     }
 
-    fn match_replace(&mut self, pattern: &Pattern, template: &Template) {
+    fn match_replace(&mut self, pattern: Pattern, template: Template) {
         let mut i = 0;
         let mut env = vec![];
         let mut c = vec![];
-        for p in pattern {
+        for p in pattern.0 {
             use PatternItem::*;
             match p {
                 Base(b) => {
-                    if self.dna[i] == *b {
+                    if self.dna[i] == b {
                         i += 1;
                     } else {
                         return;
                     }
                 }
                 Skip(n) => {
-                    i += *n as usize;
+                    i += n as usize;
                     if i > self.dna.len() {
                         return;
                     }
@@ -113,7 +173,8 @@ impl ExecutionState {
                     } else {
                         result.extend_from_slice(&left[start..]);
                         if !right.is_empty() {
-                            result.extend_from_slice(&right[0..min(end - result.len(), right.len())]);
+                            result
+                                .extend_from_slice(&right[0..min(end - result.len(), right.len())]);
                         }
                     }
                     env.push(result);
@@ -125,20 +186,20 @@ impl ExecutionState {
         self.replace(template, &env);
     }
 
-    fn replace(&mut self, template: &Template, env: &Vec<Vec<u8>>) {
+    fn replace(&mut self, template: Template, env: &Vec<Vec<u8>>) {
         let mut result = vec![];
-        for t in template {
+        for t in template.0 {
             use TemplateItem::*;
             match t {
-                Base(b) => result.push(*b),
+                Base(b) => result.push(b),
                 Ref(n, l) => {
-                    if (*n as usize) < env.len() {
-                        result.extend(Self::protect(*l, &env[*n as usize]));
+                    if (n as usize) < env.len() {
+                        result.extend(Self::protect(l, &env[n as usize]));
                     }
                 }
                 Length(n) => {
-                    let length = if (*n as usize) < env.len() {
-                        env[*n as usize].len()
+                    let length = if (n as usize) < env.len() {
+                        env[n as usize].len()
                     } else {
                         0
                     };
@@ -173,7 +234,7 @@ impl ExecutionState {
                         }
                         b'C' | b'F' => {
                             if level == 0 {
-                                break Ok(pat);
+                                break Ok(Pattern(pat));
                             }
                             level -= 1;
                             pat.push(PatternItem::GroupClose);
@@ -211,7 +272,7 @@ impl ExecutionState {
                         result.push(TemplateItem::Ref(self.nat()?, l));
                     }
                     b'I' => match self.dna.pop_front().ok_or(EarlyFinish)? {
-                        b'C' | b'F' => break Ok(result),
+                        b'C' | b'F' => break Ok(Template(result)),
                         b'P' => result.push(TemplateItem::Length(self.nat()?)),
                         b'I' => {
                             if self.dna.len() < 7 {
@@ -332,19 +393,22 @@ mod tests {
     #[test]
     fn test_patterns() {
         use PatternItem::*;
-        assert_eq!(ExecutionState::new(b"CIIC").pattern(), Ok(vec![Base(b'I')]));
+        assert_eq!(
+            ExecutionState::new(b"CIIC").pattern(),
+            Ok(Pattern(vec![Base(b'I')]))
+        );
         assert_eq!(
             ExecutionState::new(b"IIPIPICPIICICIIF").pattern(),
-            Ok(vec![GroupOpen, Skip(2), GroupClose, Base(b'P')]),
+            Ok(Pattern(vec![GroupOpen, Skip(2), GroupClose, Base(b'P')])),
         );
         assert_eq!(
             ExecutionState::new(b"IIPIPICPIICIFCCFPICIIF").pattern(),
-            Ok(vec![
+            Ok(Pattern(vec![
                 GroupOpen,
                 Skip(2),
                 GroupClose,
                 Search(b"ICFP".into_iter().map(|c| *c).collect())
-            ]),
+            ])),
         );
     }
 
@@ -353,17 +417,17 @@ mod tests {
         let mut state = ExecutionState::new(b"IIPIPICPIICICIIFICCIFPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
-        state.match_replace(&pattern, &template);
+        state.match_replace(pattern, template);
         assert_eq!(state.dna, b"PICFC");
         state = ExecutionState::new(b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
-        state.match_replace(&pattern, &template);
+        state.match_replace(pattern, template);
         assert_eq!(state.dna, b"PIICCFCFFPC");
         state = ExecutionState::new(b"IIPIPIICPIICIICCIICFCFC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
-        state.match_replace(&pattern, &template);
+        state.match_replace(pattern, template);
         assert_eq!(state.dna, b"I");
     }
 }

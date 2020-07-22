@@ -4,6 +4,12 @@ use std::collections::VecDeque;
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Position(pub u32, pub u32);
 
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+
 impl Position {
     pub fn move_(&self, dir: Direction) -> Self {
         let Position(x, y) = *self;
@@ -275,33 +281,89 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
     let mut mark = Position(0, 0);
     let mut dir = Direction::Right;
     let mut bitmaps = vec![Bitmap::transparent()];
+    let mut i = 0;
     while rna.len() >= 7 {
+        println!("Step {}", i);
         match &rna[0..7] {
-            b"PIPIIIC" => bucket.add_color(Color::RGB(BLACK)),
-            b"PIPIIIP" => bucket.add_color(Color::RGB(RED)),
-            b"PIPIICC" => bucket.add_color(Color::RGB(GREEN)),
-            b"PIPIICF" => bucket.add_color(Color::RGB(YELLOW)),
-            b"PIPIICP" => bucket.add_color(Color::RGB(BLUE)),
-            b"PIPIIFC" => bucket.add_color(Color::RGB(MAGENTA)),
-            b"PIPIIFF" => bucket.add_color(Color::RGB(CYAN)),
-            b"PIPIIPC" => bucket.add_color(Color::RGB(WHITE)),
-            b"PIPIIPF" => bucket.add_color(Color::Transparency(TRANSPARENT)),
-            b"PIPIIPP" => bucket.add_color(Color::Transparency(OPAQUE)),
-            b"PIIPICP" => bucket.clear(),
-            b"PIIIIIP" => pos = pos.move_(dir),
-            b"PCCCCCP" => dir = dir.turn_ccw(),
-            b"PFFFFFP" => dir = dir.turn_cw(),
-            b"PCCIFFP" => mark = pos,
+            b"PIPIIIC" => {
+                println!("+BLACK");
+                bucket.add_color(Color::RGB(BLACK));
+            }
+            b"PIPIIIP" => {
+                println!("+RED");
+                bucket.add_color(Color::RGB(RED));
+            }
+            b"PIPIICC" => {
+                println!("+GREEN");
+                bucket.add_color(Color::RGB(GREEN));
+            }
+            b"PIPIICF" => {
+                println!("+YELLOW");
+                bucket.add_color(Color::RGB(YELLOW));
+            }
+            b"PIPIICP" => {
+                println!("+BLUE");
+                bucket.add_color(Color::RGB(BLUE));
+            }
+            b"PIPIIFC" => {
+                println!("+MAGENTA");
+                bucket.add_color(Color::RGB(MAGENTA));
+            }
+            b"PIPIIFF" => {
+                println!("+CYAN");
+                bucket.add_color(Color::RGB(CYAN));
+            }
+            b"PIPIIPC" => {
+                println!("+WHITE");
+                bucket.add_color(Color::RGB(WHITE));
+            }
+            b"PIPIIPF" => {
+                println!("+TRANSPARENT");
+                bucket.add_color(Color::Transparency(TRANSPARENT));
+            }
+            b"PIPIIPP" => {
+                println!("+OPAQUE");
+                bucket.add_color(Color::Transparency(OPAQUE));
+            }
+            b"PIIPICP" => {
+                println!("BUCKET CLEAR");
+                bucket.clear();
+            }
+            b"PIIIIIP" => {
+                print!("pos: {} -> ", pos);
+                pos = pos.move_(dir);
+                println!("{}", pos);
+            }
+            b"PCCCCCP" => {
+                print!("dir: {:?} -> ", dir);
+                dir = dir.turn_ccw();
+                println!("{:?}", dir);
+            }
+            b"PFFFFFP" => {
+                print!("dir: {:?} -> ", dir);
+                dir = dir.turn_cw();
+                println!("{:?}", dir);
+            }
+            b"PCCIFFP" => {
+                println!("mark := {}", pos);
+                mark = pos;
+            }
             b"PFFICCP" => {
+                println!("line: {} -> {}", pos, mark);
                 let idx = bitmaps.len() - 1;
                 bitmaps[idx].draw_line(pos, mark, bucket.current_pixel());
             }
             b"PIIPIIP" => {
+                println!("fill: {}", pos);
                 let idx = bitmaps.len() - 1;
                 bitmaps[idx].fill(pos, bucket.current_pixel());
             }
-            b"PCCPFFP" => bitmaps.push(Bitmap::transparent()),
+            b"PCCPFFP" => {
+                println!("LAYER+");
+                bitmaps.push(Bitmap::transparent());
+            }
             b"PFFPCCP" => {
+                println!("LAYER COMPOSE");
                 if bitmaps.len() > 1 {
                     let bitmap = bitmaps.pop().unwrap();
                     let idx = bitmaps.len() - 1;
@@ -309,6 +371,7 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
                 }
             }
             b"PFFICCF" => {
+                println!("LAYER CLIP");
                 if bitmaps.len() > 1 {
                     let bitmap = bitmaps.pop().unwrap();
                     let idx = bitmaps.len() - 1;
@@ -318,6 +381,7 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
             _ => {}
         }
         rna = &rna[8..];
+        i += 1;
     }
     bitmaps.pop().unwrap()
 }
