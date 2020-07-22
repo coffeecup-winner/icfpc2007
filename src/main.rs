@@ -24,7 +24,7 @@ fn main() -> std::io::Result<()> {
     let outfile = env::args().nth(3).unwrap();
     match &command[..] {
         "execute" => {
-            let rna = execute(&fs::read(infile)?);
+            let rna = execute(b"", &fs::read(infile)?);
             fs::write(outfile, rna)?;
         }
         "build" => {

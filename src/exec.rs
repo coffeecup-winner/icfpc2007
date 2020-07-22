@@ -27,7 +27,7 @@ impl std::fmt::Display for Pattern {
                     b'C' => write!(f, "C")?,
                     b'F' => write!(f, "F")?,
                     b'P' => write!(f, "P")?,
-                    _ => panic!()
+                    _ => panic!(),
                 },
                 Skip(n) => write!(f, "!{}", n)?,
                 Search(s) => {
@@ -38,7 +38,7 @@ impl std::fmt::Display for Pattern {
                             b'C' => write!(f, "C")?,
                             b'F' => write!(f, "F")?,
                             b'P' => write!(f, "P")?,
-                            _ => panic!()
+                            _ => panic!(),
                         }
                     }
                 }
@@ -69,7 +69,7 @@ impl std::fmt::Display for Template {
                     b'C' => write!(f, "C")?,
                     b'F' => write!(f, "F")?,
                     b'P' => write!(f, "P")?,
-                    _ => panic!()
+                    _ => panic!(),
                 },
                 Ref(n, l) => write!(f, "\\{}:{}", n, l)?,
                 Length(n) => write!(f, "~{}", n)?,
@@ -79,8 +79,8 @@ impl std::fmt::Display for Template {
     }
 }
 
-pub fn execute(dna: &[u8]) -> Vec<u8> {
-    let mut state = ExecutionState::new(dna);
+pub fn execute(prefix: &[u8], dna: &[u8]) -> Vec<u8> {
+    let mut state = ExecutionState::new(prefix, dna);
     state.execute().unwrap_err(); // The implementation can only return an expected "error"
     return state.rna;
 }
@@ -90,9 +90,12 @@ struct EarlyFinish;
 type CanFinishEarly<T> = Result<T, EarlyFinish>;
 
 impl ExecutionState {
-    fn new(dna: &[u8]) -> Self {
+    fn new(prefix: &[u8], dna: &[u8]) -> Self {
+        let mut dna_deque = VecDeque::with_capacity(prefix.len() + dna.len());
+        dna_deque.extend(prefix);
+        dna_deque.extend(dna);
         ExecutionState {
-            dna: dna.iter().map(|c| *c).collect(),
+            dna: dna_deque,
             rna: vec![],
         }
     }
@@ -100,12 +103,15 @@ impl ExecutionState {
     fn execute(&mut self) -> CanFinishEarly<()> {
         let mut i = 0;
         loop {
+            println!("iteration {}", i);
+            println!("dna length: {}", self.dna.len());
             let pattern = self.pattern()?;
             let template = self.template()?;
-            println!("iteration {}", i);
             println!("pattern: {}", pattern);
             println!("template: {}", template);
             self.match_replace(pattern, template);
+            println!("rna length: {}", self.rna.len());
+            println!();
             i += 1;
         }
     }
@@ -182,11 +188,28 @@ impl ExecutionState {
                 }
             }
         }
+        println!("match length: {}", i);
         self.dna = self.dna.split_off(i);
         self.replace(template, &env);
     }
 
     fn replace(&mut self, template: Template, env: &Vec<Vec<u8>>) {
+        let print = |&b| match b {
+            b'I' => 'I',
+            b'C' => 'C',
+            b'F' => 'F',
+            b'P' => 'P',
+            _ => panic!(),
+        };
+        for (i, p) in env.iter().enumerate() {
+            println!(
+                "env[{}] = {}{} ({})",
+                i,
+                &p[0..10.min(p.len())].iter().map(print).collect::<String>(),
+                if p.len() > 10 { "..." } else { "" },
+                p.len()
+            );
+        }
         let mut result = vec![];
         for t in template.0 {
             use TemplateItem::*;
@@ -394,15 +417,15 @@ mod tests {
     fn test_patterns() {
         use PatternItem::*;
         assert_eq!(
-            ExecutionState::new(b"CIIC").pattern(),
+            ExecutionState::new(b"", b"CIIC").pattern(),
             Ok(Pattern(vec![Base(b'I')]))
         );
         assert_eq!(
-            ExecutionState::new(b"IIPIPICPIICICIIF").pattern(),
+            ExecutionState::new(b"", b"IIPIPICPIICICIIF").pattern(),
             Ok(Pattern(vec![GroupOpen, Skip(2), GroupClose, Base(b'P')])),
         );
         assert_eq!(
-            ExecutionState::new(b"IIPIPICPIICIFCCFPICIIF").pattern(),
+            ExecutionState::new(b"", b"IIPIPICPIICIFCCFPICIIF").pattern(),
             Ok(Pattern(vec![
                 GroupOpen,
                 Skip(2),
@@ -414,17 +437,17 @@ mod tests {
 
     #[test]
     fn test_execute() {
-        let mut state = ExecutionState::new(b"IIPIPICPIICICIIFICCIFPPIICCFPC");
+        let mut state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
         assert_eq!(state.dna, b"PICFC");
-        state = ExecutionState::new(b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
+        state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
         assert_eq!(state.dna, b"PIICCFCFFPC");
-        state = ExecutionState::new(b"IIPIPIICPIICIICCIICFCFC");
+        state = ExecutionState::new(b"", b"IIPIPIICPIICIICCIICFCFC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
