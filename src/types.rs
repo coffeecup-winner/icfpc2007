@@ -59,12 +59,12 @@ struct DNAStorageSlice {
 pub struct DNASlice {
     // The slices are stored in reverse as the DNA is modified from the front
     parts: Vec<DNAStorageSlice>,
+    total_len: usize,
 }
 
 impl DNASlice {
     pub fn len(&self) -> usize {
-        // TODO: cache this
-        self.parts.iter().map(|p| p.length).sum()
+        self.total_len
     }
 
     pub fn slice(&self, range: Range<usize>) -> DNASlice {
@@ -90,6 +90,7 @@ impl DNASlice {
         }
         DNASlice {
             parts: parts.into_iter().rev().collect(),
+            total_len: range.end - range.start,
         }
     }
 }
@@ -134,6 +135,7 @@ impl DNA {
                     start: 0,
                     length,
                 }],
+                total_len: length,
             },
         }
     }
@@ -143,7 +145,7 @@ impl DNA {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.dna.parts.is_empty()
+        self.dna.len() == 0
     }
 
     pub fn slice(&self, range: Range<usize>) -> DNASlice {
@@ -168,10 +170,13 @@ impl DNA {
                         idx: self.dna_storage.len() - 1,
                         start: 0,
                         length,
-                    })
+                    });
+                    self.dna.total_len += length;
                 }
                 DNAChunk::Slice(s) => {
+                    let length = s.total_len;
                     self.dna.parts.extend(s.parts);
+                    self.dna.total_len += length;
                 }
             }
         }
@@ -184,9 +189,11 @@ impl DNA {
             if slice.length <= count {
                 let slice = self.dna.parts.pop().unwrap();
                 count -= slice.length;
+                self.dna.total_len -= slice.length;
             } else {
                 slice.start += count;
                 slice.length -= count;
+                self.dna.total_len -= count;
                 break;
             }
         }
@@ -205,6 +212,7 @@ impl DNA {
         } else {
             self.dna.parts.pop().unwrap();
         }
+        self.dna.total_len -= 1;
         Some(b)
     }
 }
