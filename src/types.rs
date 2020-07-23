@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::iter::{IntoIterator, Iterator};
 use std::ops::{Index, Range};
 
@@ -49,25 +48,94 @@ pub fn to_u8_vec(bases: &[Base]) -> Vec<u8> {
         .collect()
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+struct DNAStorageSlice {
+    pub idx: usize,    // storage index
+    pub start: usize,  // start within the chunk
+    pub length: usize, // length of the slice
+}
+
+#[derive(Debug, Clone)]
+pub struct DNASlice {
+    // The slices are stored in reverse as the DNA is modified from the front
+    parts: Vec<DNAStorageSlice>,
+}
+
+impl DNASlice {
+    pub fn len(&self) -> usize {
+        // TODO: cache this
+        self.parts.iter().map(|p| p.length).sum()
+    }
+
+    pub fn slice(&self, range: Range<usize>) -> DNASlice {
+        let mut parts = vec![];
+        let mut start = range.start;
+        let mut length = range.end - range.start;
+        for slice in self.parts.iter().rev() {
+            if start >= slice.length {
+                start -= slice.length;
+            } else {
+                let slice_length = (slice.length - start).min(length);
+                parts.push(DNAStorageSlice {
+                    idx: slice.idx,
+                    start: slice.start + start,
+                    length: slice_length,
+                });
+                start = 0;
+                length -= slice_length;
+                if length == 0 {
+                    break;
+                }
+            }
+        }
+        DNASlice {
+            parts: parts.into_iter().rev().collect(),
+        }
+    }
+}
+
+pub enum DNAChunk {
+    Owned(Vec<Base>),
+    Slice(DNASlice),
+}
+
 pub struct DNA {
-    dna: VecDeque<Base>,
+    dna_storage: Vec<Vec<Base>>,
+    dna: DNASlice,
 }
 
 impl Index<usize> for DNA {
     type Output = Base;
 
-    fn index(&self, idx: usize) -> &Self::Output {
-        &self.dna[idx]
+    fn index(&self, mut idx: usize) -> &Self::Output {
+        for slice in self.dna.parts.iter().rev() {
+            if idx >= slice.length {
+                idx -= slice.length;
+            } else {
+                return &self.dna_storage[slice.idx][slice.start + idx];
+            }
+        }
+        panic!("Out of bounds");
     }
 }
 
 impl DNA {
     pub fn new(data: &[Vec<Base>]) -> Self {
-        let mut dna = VecDeque::new();
+        let mut storage_chunk = vec![];
         for vec in data {
-            dna.extend(vec);
+            storage_chunk.extend(vec);
         }
-        DNA { dna }
+        let length = storage_chunk.len();
+        DNA {
+            dna_storage: vec![storage_chunk],
+            dna: DNASlice {
+                parts: vec![DNAStorageSlice {
+                    idx: 0,
+                    start: 0,
+                    length,
+                }],
+            },
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -75,134 +143,68 @@ impl DNA {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.dna.is_empty()
+        self.dna.parts.is_empty()
     }
 
     pub fn slice(&self, range: Range<usize>) -> DNASlice {
-        let mut parts = vec![];
-        let (left, right) = self.dna.as_slices();
-        if range.end <= left.len() {
-            parts.push(&left[range]);
-        } else if range.start >= left.len() {
-            if !right.is_empty() {
-                let start = range.start - left.len();
-                let end = range.end - left.len();
-                if start < right.len() {
-                    parts.push(&right[start..end.min(right.len())]);
+        self.dna.slice(range)
+    }
+
+    pub fn render(&self, slice: &DNASlice) -> Vec<Base> {
+        let mut result = vec![];
+        for p in slice.parts.iter().rev() {
+            result.extend(&self.dna_storage[p.idx][p.start..(p.start + p.length)]);
+        }
+        result
+    }
+
+    pub fn extend_front(&mut self, data: Vec<DNAChunk>) {
+        for c in data.into_iter().rev() {
+            match c {
+                DNAChunk::Owned(d) => {
+                    let length = d.len();
+                    self.dna_storage.push(d);
+                    self.dna.parts.push(DNAStorageSlice {
+                        idx: self.dna_storage.len() - 1,
+                        start: 0,
+                        length,
+                    })
+                }
+                DNAChunk::Slice(s) => {
+                    self.dna.parts.extend(s.parts);
                 }
             }
-        } else {
-            parts.push(&left[range.start..]);
-            let end = range.end - left.len();
-            if !right.is_empty() {
-                parts.push(&right[0..end.min(right.len())]);
+        }
+    }
+
+    pub fn truncate_front(&mut self, mut count: usize) {
+        while count > 0 {
+            let last_idx = self.dna.parts.len() - 1;
+            let slice = &mut self.dna.parts[last_idx];
+            if slice.length <= count {
+                let slice = self.dna.parts.pop().unwrap();
+                count -= slice.length;
+            } else {
+                slice.start += count;
+                slice.length -= count;
+                break;
             }
-        }
-        DNASlice { parts }
-    }
-
-    pub fn extend_front(&mut self, data: Vec<Base>) {
-        for b in data.into_iter().rev() {
-            self.dna.push_front(b);
-        }
-    }
-
-    pub fn truncate_front(&mut self, count: usize) {
-        if count <= self.dna.len() {
-            self.dna = self.dna.split_off(count);
         }
     }
 
     pub fn pop_front(&mut self) -> Option<Base> {
-        self.dna.pop_front()
-    }
-}
-
-pub struct DNASlice<'a> {
-    parts: Vec<&'a [Base]>,
-}
-
-impl<'a> Index<usize> for DNASlice<'a> {
-    type Output = Base;
-
-    fn index(&self, mut idx: usize) -> &Self::Output {
-        for p in &self.parts {
-            if idx < p.len() {
-                return &p[idx];
-            }
-            idx -= p.len();
+        if self.dna.parts.is_empty() {
+            return None;
         }
-        panic!()
-    }
-}
-
-impl<'a> IntoIterator for DNASlice<'a> {
-    type Item = Base;
-    type IntoIter = DNASliceIntoIter<'a>;
-
-    fn into_iter(self) -> DNASliceIntoIter<'a> {
-        DNASliceIntoIter {
-            slice: self,
-            idx_part: 0,
-            idx: 0,
+        let last_idx = self.dna.parts.len() - 1;
+        let slice = &mut self.dna.parts[last_idx];
+        let b = self.dna_storage[slice.idx][slice.start];
+        if slice.length > 1 {
+            slice.start += 1;
+            slice.length -= 1;
+        } else {
+            self.dna.parts.pop().unwrap();
         }
-    }
-}
-
-impl<'a> DNASlice<'a> {
-    pub fn len(&self) -> usize {
-        self.parts.iter().map(|p| p.len()).sum()
-    }
-
-    pub fn iter(&self) -> DNASliceIter<'a> {
-        DNASliceIter {
-            slice: self as *const DNASlice,
-            idx_part: 0,
-            idx: 0,
-        }
-    }
-}
-
-pub struct DNASliceIntoIter<'a> {
-    slice: DNASlice<'a>,
-    idx_part: usize,
-    idx: usize,
-}
-
-impl<'a> Iterator for DNASliceIntoIter<'a> {
-    type Item = Base;
-
-    fn next(&mut self) -> Option<Base> {
-        let part = self.slice.parts.get(self.idx_part)?;
-        let res = part.get(self.idx)?;
-        self.idx += 1;
-        if self.idx >= part.len() {
-            self.idx_part += 1;
-            self.idx = 0;
-        }
-        Some(*res)
-    }
-}
-
-pub struct DNASliceIter<'a> {
-    slice: *const DNASlice<'a>,
-    idx_part: usize,
-    idx: usize,
-}
-
-impl<'a> Iterator for DNASliceIter<'a> {
-    type Item = Base;
-
-    fn next(&mut self) -> Option<Base> {
-        unsafe {
-            let part = (*self.slice).parts.get(self.idx_part)?;
-            let res = part.get(self.idx)?;
-            self.idx += 1;
-            if self.idx >= part.len() {
-                self.idx_part += 1;
-                self.idx = 0;
-            }
-            Some(*res)
-        }
+        Some(b)
     }
 }

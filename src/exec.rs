@@ -1,4 +1,5 @@
 use std::result::Result;
+use std::time::Instant;
 
 use crate::types::*;
 
@@ -86,11 +87,15 @@ impl ExecutionState {
         loop {
             println!("iteration {}", i);
             println!("dna length: {}", self.dna.len());
+            let time = Instant::now();
             let pattern = self.pattern()?;
             let template = self.template()?;
             println!("pattern: {}", pattern);
             println!("template: {}", template);
             self.match_replace(pattern, template);
+            if time.elapsed().as_millis() > 100 {
+                println!("SLOW ITERATION: {}ms", time.elapsed().as_millis());
+            }
             println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
             println!();
             i += 1;
@@ -155,37 +160,52 @@ impl ExecutionState {
         self.dna.extend_front(result);
     }
 
-    fn replace(&self, template: Template, env: &Vec<DNASlice>) -> Vec<Base> {
+    fn replace(&self, template: Template, env: &Vec<DNASlice>) -> Vec<DNAChunk> {
         for (i, p) in env.iter().enumerate() {
             print!("env[{}] = ", i);
-            for i in 0..10.min(p.len()) {
-                print!("{:?}", p[i]);
+            for b in self.dna.render(&p.slice(0..10.min(p.len()))) {
+                print!("{:?}", b);
             }
             println!("{} ({})", if p.len() > 10 { "..." } else { "" }, p.len());
         }
         let mut result = vec![];
+        let mut current_owned_chunk = vec![];
         for t in template.0 {
             use TemplateItem::*;
             match t {
-                Base(b) => result.push(b),
+                Base(b) => current_owned_chunk.push(b),
                 Ref(n, l) => {
+                    if !current_owned_chunk.is_empty() {
+                        result.push(DNAChunk::Owned(current_owned_chunk));
+                        current_owned_chunk = vec![];
+                    }
                     if (n as usize) < env.len() {
                         if l == 0 {
-                            result.extend(env[n as usize].iter());
+                            result.push(DNAChunk::Slice(env[n as usize].clone()));
                         } else {
-                            result.extend(Self::protect(l, env[n as usize].iter()));
+                            result.push(DNAChunk::Owned(Self::protect(
+                                l,
+                                self.dna.render(&env[n as usize]),
+                            )));
                         }
                     }
                 }
                 Length(n) => {
+                    if !current_owned_chunk.is_empty() {
+                        result.push(DNAChunk::Owned(current_owned_chunk));
+                        current_owned_chunk = vec![];
+                    }
                     let length = if (n as usize) < env.len() {
                         env[n as usize].len()
                     } else {
                         0
                     };
-                    result.extend(Self::as_nat(length as u32));
+                    result.push(DNAChunk::Owned(Self::as_nat(length as u32)));
                 }
             }
+        }
+        if !current_owned_chunk.is_empty() {
+            result.push(DNAChunk::Owned(current_owned_chunk));
         }
         result
     }
@@ -218,7 +238,7 @@ impl ExecutionState {
                             pat.push(PatternItem::GroupClose);
                         }
                         I => {
-                            self.rna.extend(self.dna.slice(0..7));
+                            self.rna.extend(self.dna.render(&self.dna.slice(0..7)));
                             self.dna.truncate_front(7);
                         }
                     },
@@ -244,7 +264,7 @@ impl ExecutionState {
                         C | F => break Ok(Template(result)),
                         P => result.push(TemplateItem::Length(self.nat()?)),
                         I => {
-                            self.rna.extend(self.dna.slice(0..7));
+                            self.rna.extend(self.dna.render(&self.dna.slice(0..7)));
                             self.dna.truncate_front(7);
                         }
                     },
@@ -321,11 +341,11 @@ impl ExecutionState {
         result
     }
 
-    fn protect<'a>(l: u32, d: DNASliceIter<'a>) -> Vec<Base> {
+    fn protect<'a>(l: u32, data: Vec<Base>) -> Vec<Base> {
         if l == 0 {
             panic!("This method should only be called if quouting is required");
         }
-        let mut result = d.collect();
+        let mut result = data;
         for _ in 0..l {
             result = Self::quote(&result);
         }
@@ -379,11 +399,7 @@ mod tests {
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
         assert_eq!(
-            state
-                .dna
-                .slice(0..state.dna.len())
-                .into_iter()
-                .collect::<Vec<_>>(),
+            state.dna.render(&state.dna.slice(0..state.dna.len())),
             to_base_vec(b"PICFC")
         );
         state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
@@ -391,11 +407,7 @@ mod tests {
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
         assert_eq!(
-            state
-                .dna
-                .slice(0..state.dna.len())
-                .into_iter()
-                .collect::<Vec<_>>(),
+            state.dna.render(&state.dna.slice(0..state.dna.len())),
             to_base_vec(b"PIICCFCFFPC")
         );
         state = ExecutionState::new(b"", b"IIPIPIICPIICIICCIICFCFC");
@@ -403,11 +415,7 @@ mod tests {
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
         assert_eq!(
-            state
-                .dna
-                .slice(0..state.dna.len())
-                .into_iter()
-                .collect::<Vec<_>>(),
+            state.dna.render(&state.dna.slice(0..state.dna.len())),
             to_base_vec(b"I")
         );
     }
