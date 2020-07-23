@@ -75,11 +75,8 @@ type CanFinishEarly<T> = Result<T, EarlyFinish>;
 
 impl ExecutionState {
     fn new(prefix: &[u8], dna_base: &[u8]) -> Self {
-        let mut dna = DNA::new();
-        dna.extend_back(to_base_vec(prefix));
-        dna.extend_back(to_base_vec(dna_base));
         ExecutionState {
-            dna,
+            dna: DNA::new(&vec![to_base_vec(prefix), to_base_vec(dna_base)]),
             rna: vec![],
         }
     }
@@ -153,25 +150,18 @@ impl ExecutionState {
             }
         }
         println!("match length: {}", i);
+        let result = self.replace(template, &env);
         self.dna.truncate_front(i);
-        self.replace(template, &env);
+        self.dna.extend_front(result);
     }
 
-    fn replace(&mut self, template: Template, env: &Vec<Vec<Base>>) {
-        let print = |&b| match b {
-            I => 'I',
-            C => 'C',
-            F => 'F',
-            P => 'P',
-        };
+    fn replace(&self, template: Template, env: &Vec<DNASlice>) -> Vec<Base> {
         for (i, p) in env.iter().enumerate() {
-            println!(
-                "env[{}] = {}{} ({})",
-                i,
-                &p[0..10.min(p.len())].iter().map(print).collect::<String>(),
-                if p.len() > 10 { "..." } else { "" },
-                p.len()
-            );
+            print!("env[{}] = ", i);
+            for i in 0..10.min(p.len()) {
+                print!("{:?}", p[i]);
+            }
+            println!("{} ({})", if p.len() > 10 { "..." } else { "" }, p.len());
         }
         let mut result = vec![];
         for t in template.0 {
@@ -180,7 +170,11 @@ impl ExecutionState {
                 Base(b) => result.push(b),
                 Ref(n, l) => {
                     if (n as usize) < env.len() {
-                        result.extend(Self::protect(l, &env[n as usize]));
+                        if l == 0 {
+                            result.extend(env[n as usize].iter());
+                        } else {
+                            result.extend(Self::protect(l, env[n as usize].iter()));
+                        }
                     }
                 }
                 Length(n) => {
@@ -193,7 +187,7 @@ impl ExecutionState {
                 }
             }
         }
-        self.dna.extend_front(result);
+        result
     }
 
     fn pattern(&mut self) -> CanFinishEarly<Pattern> {
@@ -327,8 +321,11 @@ impl ExecutionState {
         result
     }
 
-    fn protect(l: u32, d: &Vec<Base>) -> Vec<Base> {
-        let mut result = d.clone();
+    fn protect<'a>(l: u32, d: DNASliceIter<'a>) -> Vec<Base> {
+        if l == 0 {
+            panic!("This method should only be called if quouting is required");
+        }
+        let mut result = d.collect();
         for _ in 0..l {
             result = Self::quote(&result);
         }
@@ -381,16 +378,37 @@ mod tests {
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"PICFC"));
+        assert_eq!(
+            state
+                .dna
+                .slice(0..state.dna.len())
+                .into_iter()
+                .collect::<Vec<_>>(),
+            to_base_vec(b"PICFC")
+        );
         state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"PIICCFCFFPC"));
+        assert_eq!(
+            state
+                .dna
+                .slice(0..state.dna.len())
+                .into_iter()
+                .collect::<Vec<_>>(),
+            to_base_vec(b"PIICCFCFFPC")
+        );
         state = ExecutionState::new(b"", b"IIPIPIICPIICIICCIICFCFC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"I"));
+        assert_eq!(
+            state
+                .dna
+                .slice(0..state.dna.len())
+                .into_iter()
+                .collect::<Vec<_>>(),
+            to_base_vec(b"I")
+        );
     }
 }

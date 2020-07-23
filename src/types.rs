@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::iter::{IntoIterator, Iterator};
 use std::ops::{Index, Range};
 
 pub use Base::*;
@@ -61,10 +62,12 @@ impl Index<usize> for DNA {
 }
 
 impl DNA {
-    pub fn new() -> Self {
-        DNA {
-            dna: VecDeque::new(),
+    pub fn new(data: &[Vec<Base>]) -> Self {
+        let mut dna = VecDeque::new();
+        for vec in data {
+            dna.extend(vec);
         }
+        DNA { dna }
     }
 
     pub fn len(&self) -> usize {
@@ -75,37 +78,33 @@ impl DNA {
         self.dna.is_empty()
     }
 
-    pub fn slice(&self, range: Range<usize>) -> Vec<Base> {
-        let mut result = vec![];
+    pub fn slice(&self, range: Range<usize>) -> DNASlice {
+        let mut parts = vec![];
         let (left, right) = self.dna.as_slices();
         if range.end <= left.len() {
-            result.extend_from_slice(&left[range]);
+            parts.push(&left[range]);
         } else if range.start >= left.len() {
             if !right.is_empty() {
                 let start = range.start - left.len();
                 let end = range.end - left.len();
                 if start < right.len() {
-                    result.extend_from_slice(&right[start..end.min(right.len())]);
+                    parts.push(&right[start..end.min(right.len())]);
                 }
             }
         } else {
-            result.extend_from_slice(&left[range.start..]);
+            parts.push(&left[range.start..]);
             let end = range.end - left.len();
             if !right.is_empty() {
-                result.extend_from_slice(&right[0..end.min(right.len())]);
+                parts.push(&right[0..end.min(right.len())]);
             }
         }
-        result
+        DNASlice { parts }
     }
 
     pub fn extend_front(&mut self, data: Vec<Base>) {
         for b in data.into_iter().rev() {
             self.dna.push_front(b);
         }
-    }
-
-    pub fn extend_back(&mut self, data: Vec<Base>) {
-        self.dna.extend(&data);
     }
 
     pub fn truncate_front(&mut self, count: usize) {
@@ -116,5 +115,94 @@ impl DNA {
 
     pub fn pop_front(&mut self) -> Option<Base> {
         self.dna.pop_front()
+    }
+}
+
+pub struct DNASlice<'a> {
+    parts: Vec<&'a [Base]>,
+}
+
+impl<'a> Index<usize> for DNASlice<'a> {
+    type Output = Base;
+
+    fn index(&self, mut idx: usize) -> &Self::Output {
+        for p in &self.parts {
+            if idx < p.len() {
+                return &p[idx];
+            }
+            idx -= p.len();
+        }
+        panic!()
+    }
+}
+
+impl<'a> IntoIterator for DNASlice<'a> {
+    type Item = Base;
+    type IntoIter = DNASliceIntoIter<'a>;
+
+    fn into_iter(self) -> DNASliceIntoIter<'a> {
+        DNASliceIntoIter {
+            slice: self,
+            idx_part: 0,
+            idx: 0,
+        }
+    }
+}
+
+impl<'a> DNASlice<'a> {
+    pub fn len(&self) -> usize {
+        self.parts.iter().map(|p| p.len()).sum()
+    }
+
+    pub fn iter(&self) -> DNASliceIter<'a> {
+        DNASliceIter {
+            slice: self as *const DNASlice,
+            idx_part: 0,
+            idx: 0,
+        }
+    }
+}
+
+pub struct DNASliceIntoIter<'a> {
+    slice: DNASlice<'a>,
+    idx_part: usize,
+    idx: usize,
+}
+
+impl<'a> Iterator for DNASliceIntoIter<'a> {
+    type Item = Base;
+
+    fn next(&mut self) -> Option<Base> {
+        let part = self.slice.parts.get(self.idx_part)?;
+        let res = part.get(self.idx)?;
+        self.idx += 1;
+        if self.idx >= part.len() {
+            self.idx_part += 1;
+            self.idx = 0;
+        }
+        Some(*res)
+    }
+}
+
+pub struct DNASliceIter<'a> {
+    slice: *const DNASlice<'a>,
+    idx_part: usize,
+    idx: usize,
+}
+
+impl<'a> Iterator for DNASliceIter<'a> {
+    type Item = Base;
+
+    fn next(&mut self) -> Option<Base> {
+        unsafe {
+            let part = (*self.slice).parts.get(self.idx_part)?;
+            let res = part.get(self.idx)?;
+            self.idx += 1;
+            if self.idx >= part.len() {
+                self.idx_part += 1;
+                self.idx = 0;
+            }
+            Some(*res)
+        }
     }
 }
