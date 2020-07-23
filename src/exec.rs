@@ -1,10 +1,9 @@
-use std::collections::VecDeque;
 use std::result::Result;
 
 use crate::types::*;
 
 struct ExecutionState {
-    dna: VecDeque<Base>,
+    dna: DNA,
     rna: Vec<Base>,
 }
 
@@ -75,12 +74,12 @@ struct EarlyFinish;
 type CanFinishEarly<T> = Result<T, EarlyFinish>;
 
 impl ExecutionState {
-    fn new(prefix: &[u8], dna: &[u8]) -> Self {
-        let mut dna_deque = VecDeque::with_capacity(prefix.len() + dna.len());
-        dna_deque.extend(to_base_vec(prefix));
-        dna_deque.extend(to_base_vec(dna));
+    fn new(prefix: &[u8], dna_base: &[u8]) -> Self {
+        let mut dna = DNA::new();
+        dna.extend_back(to_base_vec(prefix));
+        dna.extend_back(to_base_vec(dna_base));
         ExecutionState {
-            dna: dna_deque,
+            dna,
             rna: vec![],
         }
     }
@@ -147,40 +146,14 @@ impl ExecutionState {
                     c.push(i);
                 }
                 GroupClose => {
-                    let (left, right) = self.dna.as_slices();
-                    let mut result = vec![];
-                    let start = *c.last().unwrap();
+                    let start = c.pop().unwrap();
                     let end = i;
-                    // TODO: fix the below
-                    //
-                    if end <= left.len() {
-                        result.extend_from_slice(&left[start..end]);
-                    } else if start >= left.len() {
-                        if !right.is_empty() {
-                            let start = start - left.len();
-                            let end = end - left.len();
-                            if start < left.len() {
-                                result.extend_from_slice(&right[start..end.min(right.len())]);
-                            }
-                        }
-                    } else {
-                        result.extend_from_slice(&left[start..]);
-                        let end = end - left.len();
-                        if !right.is_empty() {
-                            result.extend_from_slice(&right[0..end.min(right.len())]);
-                        }
-                    }
-                    // let mut data = vec![];
-                    // data.extend_from_slice(left);
-                    // data.extend_from_slice(right);
-                    // result.extend_from_slice(&data[start..end]);
-                    env.push(result);
-                    c.pop();
+                    env.push(self.dna.slice(start..end));
                 }
             }
         }
         println!("match length: {}", i);
-        self.dna = self.dna.split_off(i);
+        self.dna.truncate_front(i);
         self.replace(template, &env);
     }
 
@@ -220,9 +193,7 @@ impl ExecutionState {
                 }
             }
         }
-        for b in result.into_iter().rev() {
-            self.dna.push_front(b);
-        }
+        self.dna.extend_front(result);
     }
 
     fn pattern(&mut self) -> CanFinishEarly<Pattern> {
@@ -253,14 +224,8 @@ impl ExecutionState {
                             pat.push(PatternItem::GroupClose);
                         }
                         I => {
-                            if self.dna.len() < 7 {
-                                self.rna.extend(self.dna.clone());
-                                self.dna.clear();
-                                break Err(EarlyFinish);
-                            }
-                            for _ in 0..7 {
-                                self.rna.push(self.dna.pop_front().unwrap());
-                            }
+                            self.rna.extend(self.dna.slice(0..7));
+                            self.dna.truncate_front(7);
                         }
                     },
                 },
@@ -285,14 +250,8 @@ impl ExecutionState {
                         C | F => break Ok(Template(result)),
                         P => result.push(TemplateItem::Length(self.nat()?)),
                         I => {
-                            if self.dna.len() < 7 {
-                                self.rna.extend(self.dna.clone());
-                                self.dna.clear();
-                                break Err(EarlyFinish);
-                            }
-                            for _ in 0..7 {
-                                self.rna.push(self.dna.pop_front().unwrap());
-                            }
+                            self.rna.extend(self.dna.slice(0..7));
+                            self.dna.truncate_front(7);
                         }
                     },
                 },
@@ -306,7 +265,7 @@ impl ExecutionState {
             match self.dna.pop_front().ok_or(EarlyFinish)? {
                 P => {
                     let mut result = 0;
-                    for x in stack.into_iter().rev() {
+                    while let Some(x) = stack.pop() {
                         result = result * 2 + x;
                     }
                     break Ok(result);
@@ -422,16 +381,16 @@ mod tests {
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, to_base_vec(b"PICFC"));
+        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"PICFC"));
         state = ExecutionState::new(b"", b"IIPIPICPIICICIIFICCIFCCCPPIICCFPC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, to_base_vec(b"PIICCFCFFPC"));
+        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"PIICCFCFFPC"));
         state = ExecutionState::new(b"", b"IIPIPIICPIICIICCIICFCFC");
         let pattern = state.pattern().unwrap();
         let template = state.template().unwrap();
         state.match_replace(pattern, template);
-        assert_eq!(state.dna, to_base_vec(b"I"));
+        assert_eq!(state.dna.slice(0..state.dna.len()), to_base_vec(b"I"));
     }
 }
