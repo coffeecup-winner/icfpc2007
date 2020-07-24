@@ -368,11 +368,6 @@ impl<'a> DNASlidingWindow<'a> {
     }
 
     pub fn is_match(&self, data: &[Base]) -> bool {
-        for i in 0..self.window.len() {
-            if self.window[i] != data[i] {
-                return false;
-            }
-        }
-        true
+        self.window == data
     }
 }
