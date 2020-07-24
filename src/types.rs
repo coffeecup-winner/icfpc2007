@@ -106,6 +106,40 @@ impl DNASlice {
         self.parts.push(s);
         self.total_len += length;
     }
+
+    fn pop_front(&mut self) -> Option<(usize, usize)> {
+        if self.parts.is_empty() {
+            return None;
+        }
+        let last_idx = self.parts.len() - 1;
+        let slice = &mut self.parts[last_idx];
+        let (storage_idx, idx) = (slice.idx, slice.start);
+        if slice.length > 1 {
+            slice.start += 1;
+            slice.length -= 1;
+        } else {
+            self.parts.pop().unwrap();
+        }
+        self.total_len -= 1;
+        Some((storage_idx, idx))
+    }
+
+    fn truncate_front(&mut self, mut count: usize) {
+        while count > 0 {
+            let last_idx = self.parts.len() - 1;
+            let slice = &mut self.parts[last_idx];
+            if slice.length <= count {
+                let slice = self.parts.pop().unwrap();
+                count -= slice.length;
+                self.total_len -= slice.length;
+            } else {
+                slice.start += count;
+                slice.length -= count;
+                self.total_len -= count;
+                break;
+            }
+        }
+    }
 }
 
 pub enum DNAChunk {
@@ -118,7 +152,7 @@ pub struct DNA {
     dna: DNASlice,
 }
 
-const CONSOLIDATION_TARGET_SIZE: usize = 1024; // 1KiB
+const CONSOLIDATION_TARGET_SIZE: usize = 4 * 1024; // 4KiB
 
 impl Index<usize> for DNA {
     type Output = Base;
@@ -251,38 +285,13 @@ impl DNA {
         }
     }
 
-    pub fn truncate_front(&mut self, mut count: usize) {
-        while count > 0 {
-            let last_idx = self.dna.parts.len() - 1;
-            let slice = &mut self.dna.parts[last_idx];
-            if slice.length <= count {
-                let slice = self.dna.parts.pop().unwrap();
-                count -= slice.length;
-                self.dna.total_len -= slice.length;
-            } else {
-                slice.start += count;
-                slice.length -= count;
-                self.dna.total_len -= count;
-                break;
-            }
-        }
+    pub fn truncate_front(&mut self, count: usize) {
+        self.dna.truncate_front(count);
     }
 
     pub fn pop_front(&mut self) -> Option<Base> {
-        if self.dna.parts.is_empty() {
-            return None;
-        }
-        let last_idx = self.dna.parts.len() - 1;
-        let slice = &mut self.dna.parts[last_idx];
-        let b = self.dna_storage[slice.idx][slice.start];
-        if slice.length > 1 {
-            slice.start += 1;
-            slice.length -= 1;
-        } else {
-            self.dna.parts.pop().unwrap();
-        }
-        self.dna.total_len -= 1;
-        Some(b)
+        let (storage_idx, idx) = self.dna.pop_front()?;
+        Some(self.dna_storage[storage_idx][idx])
     }
 
     pub fn debug_print(&self) {
