@@ -16,15 +16,15 @@ use std::time::Instant;
 pub struct UISystem {
     imgui: Context,
     platform: WinitPlatform,
-    rendering_system: RenderingSystem,
+    pub rendering_system: RenderingSystem,
     events_loop: EventsLoop,
 }
 
-struct RenderingSystem {
-    renderer: Renderer<Rgba8, Resources>,
+pub struct RenderingSystem {
+    pub renderer: Renderer<Rgba8, Resources>,
     ctx: WindowedContext<PossiblyCurrent>,
     device: Device,
-    factory: Factory,
+    pub factory: Factory,
     render_target_view: RenderTargetView<Resources, Rgba8>,
     depth_stencil_view: DepthStencilView<Resources, DepthStencil>,
 }
@@ -52,7 +52,7 @@ impl UISystem {
             .with_title(title.to_string())
             .with_dimensions(LogicalSize::new(width as f64, height as f64));
 
-        let context = ContextBuilder::new();
+        let context = ContextBuilder::new().with_vsync(true);
         let events_loop = EventsLoop::new();
         let (ctx_wrapper, device, mut factory, render_target_view, depth_stencil_view) =
             gfx_window_glutin::init(window_builder, context, &events_loop)
@@ -78,7 +78,7 @@ impl UISystem {
         }
     }
 
-    pub fn run<F: FnMut(&mut Ui, &mut bool)>(self, mut build_ui: F) {
+    pub fn run<F: FnMut(&Ui, &mut bool)>(self, mut build_ui: F) {
         let UISystem {
             mut events_loop,
             mut imgui,
@@ -129,8 +129,8 @@ impl UISystem {
             prev_time = Instant::now();
 
             // Build the UI
-            let mut ui = imgui.frame();
-            build_ui(&mut ui, &mut continue_);
+            let ui = imgui.frame();
+            build_ui(&ui, &mut continue_);
 
             // Render
             cmd_buffer.clear(&rendering_system.render_target_view, [1.0, 1.0, 1.0, 1.0]);
