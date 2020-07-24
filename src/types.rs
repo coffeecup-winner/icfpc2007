@@ -161,24 +161,78 @@ impl DNA {
     }
 
     pub fn extend_front(&mut self, data: Vec<DNAChunk>) {
+        let mut current_slices = vec![];
         for c in data.into_iter().rev() {
             match c {
                 DNAChunk::Owned(d) => {
-                    let length = d.len();
-                    self.dna_storage.push(d);
-                    self.dna.parts.push(DNAStorageSlice {
-                        idx: self.dna_storage.len() - 1,
-                        start: 0,
-                        length,
-                    });
-                    self.dna.total_len += length;
+                    if !current_slices.is_empty() {
+                        self.extend_front_slices(current_slices);
+                        current_slices = vec![];
+                    }
+                    self.extend_front_owned(d);
                 }
                 DNAChunk::Slice(s) => {
-                    let length = s.total_len;
-                    self.dna.parts.extend(s.parts);
-                    self.dna.total_len += length;
+                    current_slices.push(s);
                 }
             }
+        }
+        if !current_slices.is_empty() {
+            self.extend_front_slices(current_slices);
+        }
+    }
+
+    fn extend_front_owned(&mut self, data: Vec<Base>) {
+        let length = data.len();
+        self.dna_storage.push(data);
+        self.dna.parts.push(DNAStorageSlice {
+            idx: self.dna_storage.len() - 1,
+            start: 0,
+            length,
+        });
+        self.dna.total_len += length;
+    }
+
+    fn extend_front_slices(&mut self, slices: Vec<DNASlice>) {
+        // This method will consolidate small slices as new chunks
+        if slices.len() == 1 {
+            let slice = &slices[0];
+            if let &[single_part] = &slice.parts[..] {
+                let length = single_part.length;
+                self.dna.parts.push(single_part);
+                self.dna.total_len += length;
+                return;
+            }
+        }
+        let mut new_chunk = vec![];
+        let mut new_chunk_len = 0;
+        for s in slices {
+            for p in s.parts {
+                if new_chunk_len + p.length > 1024 {
+                    if !new_chunk.is_empty() {
+                        self.extend_front_owned(self.render(&DNASlice {
+                            parts: new_chunk,
+                            total_len: new_chunk_len,
+                        }));
+                        new_chunk = vec![];
+                        new_chunk_len = 0;
+                    }
+                }
+                if p.length > 1024 {
+                    let length = p.length;
+                    self.dna.parts.push(p);
+                    self.dna.total_len += length;
+                } else {
+                    let length = p.length;
+                    new_chunk.push(p);
+                    new_chunk_len += length;
+                }
+            }
+        }
+        if new_chunk_len != 0 {
+            self.extend_front_owned(self.render(&DNASlice {
+                parts: new_chunk,
+                total_len: new_chunk_len,
+            }));
         }
     }
 
