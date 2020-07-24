@@ -133,24 +133,19 @@ impl ExecutionState {
                 }
                 Search(s) => {
                     if s.len() > 0 {
-                        let mut success = false;
-                        for j in i..=(self.dna.len() - s.len()) {
-                            let mut is_match = true;
-                            for k in 0..s.len() {
-                                if self.dna[j + k] != s[k] {
-                                    is_match = false;
-                                    break;
-                                }
-                            }
-                            if is_match {
-                                i = j + s.len();
-                                success = true;
-                                break;
-                            }
-                        }
-                        if !success {
+                        if i + s.len() > self.dna.len() {
                             return;
                         }
+                        let mut window = self.dna.window(i, s.len());
+                        loop {
+                            if window.is_match(&s) {
+                                i += window.offset() + s.len();
+                                break;
+                            }
+                            if !window.next() {
+                                return;
+                            }
+                        };
                     }
                 }
                 GroupOpen => {

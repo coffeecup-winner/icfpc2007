@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::iter::{IntoIterator, Iterator};
 use std::ops::{Index, Range};
 
@@ -102,6 +103,9 @@ impl DNASlice {
     }
 
     fn push_front(&mut self, s: DNAStorageSlice) {
+        if s.length == 0 {
+            return;
+        }
         let length = s.length;
         self.parts.push(s);
         self.total_len += length;
@@ -201,6 +205,13 @@ impl DNA {
         self.dna.slice(range)
     }
 
+    pub fn window(&self, start: usize, window_size: usize) -> DNASlidingWindow {
+        if start + window_size > self.dna.total_len {
+            panic!("Invalid index/window size");
+        }
+        DNASlidingWindow::new(&self, start, window_size)
+    }
+
     pub fn render(&self, slice: &DNASlice) -> Vec<Base> {
         let mut result = vec![];
         for p in slice.parts.iter().rev() {
@@ -231,6 +242,9 @@ impl DNA {
     }
 
     fn extend_front_owned(&mut self, data: Vec<Base>) {
+        if data.is_empty() {
+            return;
+        }
         let length = data.len();
         self.dna_storage.push(data);
         self.dna.parts.push(DNAStorageSlice {
@@ -246,9 +260,7 @@ impl DNA {
         if slices.len() == 1 {
             let slice = &slices[0];
             if let &[single_part] = &slice.parts[..] {
-                let length = single_part.length;
-                self.dna.parts.push(single_part);
-                self.dna.total_len += length;
+                self.dna.push_front(single_part);
                 return;
             }
         }
@@ -262,9 +274,7 @@ impl DNA {
                     }
                 }
                 if p.length > CONSOLIDATION_TARGET_SIZE {
-                    let length = p.length;
-                    self.dna.parts.push(p);
-                    self.dna.total_len += length;
+                    self.dna.push_front(p);
                 } else {
                     new_slice.push_front(p);
                 }
@@ -277,9 +287,7 @@ impl DNA {
 
     fn extend_from_slice(&mut self, slice: DNASlice) {
         if slice.parts.len() == 1 {
-            let length = slice.parts[0].length;
-            self.dna.parts.push(slice.parts[0]);
-            self.dna.total_len += length;
+            self.dna.push_front(slice.parts[0]);
         } else {
             self.extend_front_owned(self.render(&slice));
         }
@@ -316,5 +324,55 @@ impl DNA {
             println!("Total used chunks: {}", used_indices.len());
         }
         println!("Total chunks: {}", self.dna_storage.len());
+    }
+}
+
+pub struct DNASlidingWindow<'a> {
+    dna: &'a DNA,
+    window: VecDeque<Base>,
+    slice: DNASlice,
+    offset: usize,
+}
+
+impl<'a> DNASlidingWindow<'a> {
+    fn new(dna: &'a DNA, start: usize, window_size: usize) -> Self {
+        let mut slice = dna.dna.clone();
+        slice.truncate_front(start);
+        let mut window = VecDeque::with_capacity(window_size);
+        for _ in 0..window_size {
+            let (storage_idx, idx) = slice.pop_front().unwrap();
+            window.push_back(dna.dna_storage[storage_idx][idx]);
+        }
+        DNASlidingWindow {
+            dna,
+            window,
+            slice,
+            offset: 0,
+        }
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn next(&mut self) -> bool {
+        if let Some((storage_idx, idx)) = self.slice.pop_front() {
+            self.window.pop_front();
+            self.window
+                .push_back(self.dna.dna_storage[storage_idx][idx]);
+            self.offset += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_match(&self, data: &[Base]) -> bool {
+        for i in 0..self.window.len() {
+            if self.window[i] != data[i] {
+                return false;
+            }
+        }
+        true
     }
 }
