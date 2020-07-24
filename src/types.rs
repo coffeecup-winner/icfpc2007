@@ -93,6 +93,19 @@ impl DNASlice {
             total_len: range.end - range.start,
         }
     }
+
+    fn new() -> Self {
+        DNASlice {
+            parts: vec![],
+            total_len: 0,
+        }
+    }
+
+    fn push_front(&mut self, s: DNAStorageSlice) {
+        let length = s.length;
+        self.parts.push(s);
+        self.total_len += length;
+    }
 }
 
 pub enum DNAChunk {
@@ -104,6 +117,8 @@ pub struct DNA {
     dna_storage: Vec<Vec<Base>>,
     dna: DNASlice,
 }
+
+const CONSOLIDATION_TARGET_SIZE: usize = 1024; // 1KiB
 
 impl Index<usize> for DNA {
     type Output = Base;
@@ -203,36 +218,36 @@ impl DNA {
                 return;
             }
         }
-        let mut new_chunk = vec![];
-        let mut new_chunk_len = 0;
+        let mut new_slice = DNASlice::new();
         for s in slices {
             for p in s.parts {
-                if new_chunk_len + p.length > 1024 {
-                    if !new_chunk.is_empty() {
-                        self.extend_front_owned(self.render(&DNASlice {
-                            parts: new_chunk,
-                            total_len: new_chunk_len,
-                        }));
-                        new_chunk = vec![];
-                        new_chunk_len = 0;
+                if new_slice.total_len + p.length > CONSOLIDATION_TARGET_SIZE {
+                    if new_slice.total_len != 0 {
+                        self.extend_from_slice(new_slice);
+                        new_slice = DNASlice::new();
                     }
                 }
-                if p.length > 1024 {
+                if p.length > CONSOLIDATION_TARGET_SIZE {
                     let length = p.length;
                     self.dna.parts.push(p);
                     self.dna.total_len += length;
                 } else {
-                    let length = p.length;
-                    new_chunk.push(p);
-                    new_chunk_len += length;
+                    new_slice.push_front(p);
                 }
             }
         }
-        if new_chunk_len != 0 {
-            self.extend_front_owned(self.render(&DNASlice {
-                parts: new_chunk,
-                total_len: new_chunk_len,
-            }));
+        if new_slice.total_len != 0 {
+            self.extend_from_slice(new_slice);
+        }
+    }
+
+    fn extend_from_slice(&mut self, slice: DNASlice) {
+        if slice.parts.len() == 1 {
+            let length = slice.parts[0].length;
+            self.dna.parts.push(slice.parts[0]);
+            self.dna.total_len += length;
+        } else {
+            self.extend_front_owned(self.render(&slice));
         }
     }
 
@@ -268,5 +283,29 @@ impl DNA {
         }
         self.dna.total_len -= 1;
         Some(b)
+    }
+
+    pub fn debug_print(&self) {
+        println!("Total slices: {}", self.dna.parts.len());
+        if !self.dna.parts.is_empty() {
+            let mut min = self.dna.parts[0].length;
+            let mut max = min;
+            let mut avg = 0;
+            let mut used_indices = std::collections::HashSet::new();
+            for p in &self.dna.parts {
+                if p.length < min {
+                    min = p.length;
+                }
+                if p.length > max {
+                    max = p.length;
+                }
+                avg += p.length;
+                used_indices.insert(p.idx);
+            }
+            avg /= self.dna.parts.len();
+            println!("min: {}, max: {}, avg: {}", min, max, avg);
+            println!("Total used chunks: {}", used_indices.len());
+        }
+        println!("Total chunks: {}", self.dna_storage.len());
     }
 }

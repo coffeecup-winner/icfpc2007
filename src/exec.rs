@@ -6,6 +6,7 @@ use crate::types::*;
 struct ExecutionState {
     dna: DNA,
     rna: Vec<Base>,
+    enable_debug_prints: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,25 +80,33 @@ impl ExecutionState {
         ExecutionState {
             dna: DNA::new(&vec![to_base_vec(prefix), to_base_vec(dna_base)]),
             rna: vec![],
+            enable_debug_prints: false,
         }
     }
 
     fn execute(&mut self) -> CanFinishEarly<()> {
         let mut i = 0;
         loop {
-            println!("iteration {}", i);
-            println!("dna length: {}", self.dna.len());
+            if self.enable_debug_prints {
+                println!("iteration {}", i);
+                println!("dna length: {}", self.dna.len());
+            }
             let time = Instant::now();
             let pattern = self.pattern()?;
             let template = self.template()?;
-            println!("pattern: {}", pattern);
-            println!("template: {}", template);
-            self.match_replace(pattern, template);
-            if time.elapsed().as_millis() > 100 {
-                println!("SLOW ITERATION: {}ms", time.elapsed().as_millis());
+            if self.enable_debug_prints {
+                println!("pattern: {}", pattern);
+                println!("template: {}", template);
             }
-            println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
-            println!();
+            self.match_replace(pattern, template);
+            if time.elapsed().as_millis() > 10 {
+                println!("SLOW ITERATION {}: {}ms", i, time.elapsed().as_millis());
+                self.dna.debug_print();
+            }
+            if self.enable_debug_prints {
+                println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
+                println!();
+            }
             i += 1;
         }
     }
@@ -125,7 +134,7 @@ impl ExecutionState {
                 Search(s) => {
                     if s.len() > 0 {
                         let mut success = false;
-                        for j in i..(self.dna.len() - s.len()) {
+                        for j in i..=(self.dna.len() - s.len()) {
                             let mut is_match = true;
                             for k in 0..s.len() {
                                 if self.dna[j + k] != s[k] {
@@ -154,19 +163,23 @@ impl ExecutionState {
                 }
             }
         }
-        println!("match length: {}", i);
+        if self.enable_debug_prints {
+            println!("match length: {}", i);
+        }
         let result = self.replace(template, &env);
         self.dna.truncate_front(i);
         self.dna.extend_front(result);
     }
 
     fn replace(&self, template: Template, env: &Vec<DNASlice>) -> Vec<DNAChunk> {
-        for (i, p) in env.iter().enumerate() {
-            print!("env[{}] = ", i);
-            for b in self.dna.render(&p.slice(0..10.min(p.len()))) {
-                print!("{:?}", b);
+        if self.enable_debug_prints {
+            for (i, p) in env.iter().enumerate() {
+                print!("env[{}] = ", i);
+                for b in self.dna.render(&p.slice(0..10.min(p.len()))) {
+                    print!("{:?}", b);
+                }
+                println!("{} ({})", if p.len() > 10 { "..." } else { "" }, p.len());
             }
-            println!("{} ({})", if p.len() > 10 { "..." } else { "" }, p.len());
         }
         let mut result = vec![];
         let mut current_owned_chunk = vec![];
@@ -418,5 +431,11 @@ mod tests {
             state.dna.render(&state.dna.slice(0..state.dna.len())),
             to_base_vec(b"I")
         );
+        // Find "FF" and replace with nothing
+        state = ExecutionState::new(b"", b"IFCPPIICIICPFF");
+        let pattern = state.pattern().unwrap();
+        let template = state.template().unwrap();
+        state.match_replace(pattern, template);
+        assert_eq!(state.dna.len(), 0);
     }
 }
