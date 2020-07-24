@@ -27,3 +27,29 @@ pub fn write_bitmap_as_png<W: Write>(bitmap: &Bitmap, out: W) -> std::io::Result
 
     Ok(())
 }
+
+#[allow(dead_code)]
+pub fn write_bitmap_as_png_rgba<W: Write>(bitmap: &Bitmap, out: W) -> std::io::Result<()> {
+    let writer = BufWriter::new(out);
+    
+    let mut encoder = png::Encoder::new(writer, 600, 600);
+    encoder.set_color(png::ColorType::RGBA);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header()?;
+
+    let mut data = vec![0u8; 4 * 600 * 600];
+    let mut i = 0;
+    for y in 0..600 {
+        for x in 0..600 {
+            let Pixel { rgb: RGB(r, g, b), a } = bitmap.get(Position(x, y));
+            data[i] = r;
+            data[i + 1] = g;
+            data[i + 2] = b;
+            data[i + 3] = a;
+            i += 4;
+        }
+    }
+    writer.write_image_data(&data)?;
+
+    Ok(())
+}

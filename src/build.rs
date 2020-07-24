@@ -64,15 +64,15 @@ impl Bitmap {
         Position(x1, y1): Position,
         pixel: Pixel,
     ) {
-        let dx = x1 as f32 - x0 as f32;
-        let dy = y1 as f32 - y0 as f32;
+        let dx = x1 as i32 - x0 as i32;
+        let dy = y1 as i32 - y0 as i32;
         let d = dx.abs().max(dy.abs()) as u32;
-        let c = if dx * dy <= 0f32 { 1 } else { 0 } as u32;
-        let mut x = (x0 * d + ((d - c) / 2)) as f32;
-        let mut y = (y0 * d + ((d - c) / 2)) as f32;
+        let c = if dx * dy <= 0 { 1 } else { 0 } as u32;
+        let mut x = (x0 * d + ((d - c) / 2)) as i32;
+        let mut y = (y0 * d + ((d - c) / 2)) as i32;
         for _ in 0..d {
             self.set(
-                Position((x / d as f32) as u32, (y / d as f32) as u32),
+                Position((x / d as i32) as u32, (y / d as i32) as u32),
                 pixel,
             );
             x += dx;
@@ -126,23 +126,25 @@ impl Bitmap {
     pub fn compose_with(&mut self, other: Self) {
         for y in 0..600u32 {
             for x in 0..600u32 {
-                let Pixel {
-                    rgb: RGB(r0, g0, b0),
-                    a: a0,
-                } = other.get(Position(x, y));
-                let Pixel {
-                    rgb: RGB(r1, g1, b1),
-                    a: a1,
-                } = self.get(Position(x, y));
+                let p0 = other.get(Position(x, y));
+                let r0 = p0.rgb.0 as u32;
+                let g0 = p0.rgb.1 as u32;
+                let b0 = p0.rgb.2 as u32;
+                let a0 = p0.a as u32;
+                let p1 = self.get(Position(x, y));
+                let r1 = p1.rgb.0 as u32;
+                let g1 = p1.rgb.1 as u32;
+                let b1 = p1.rgb.2 as u32;
+                let a1 = p1.a as u32;
                 self.set(
                     Position(x, y),
                     Pixel {
                         rgb: RGB(
-                            r0 + (r1 * (255 - a0) / 255),
-                            g0 + (g1 * (255 - a0) / 255),
-                            b0 + (b1 * (255 - a0) / 255),
+                            (r0 + (r1 * (255 - a0) / 255)) as u8,
+                            (g0 + (g1 * (255 - a0) / 255)) as u8,
+                            (b0 + (b1 * (255 - a0) / 255)) as u8,
                         ),
-                        a: a0 + (a1 * (255 - a0) / 255),
+                        a: (a0 + (a1 * (255 - a0) / 255)) as u8,
                     },
                 )
             }
@@ -152,16 +154,22 @@ impl Bitmap {
     pub fn clip_with(&mut self, other: Self) {
         for y in 0..600u32 {
             for x in 0..600u32 {
-                let Pixel { rgb: _, a: a0 } = other.get(Position(x, y));
-                let Pixel {
-                    rgb: RGB(r1, g1, b1),
-                    a: a1,
-                } = self.get(Position(x, y));
+                let p0 = other.get(Position(x, y));
+                let a0 = p0.a as u32;
+                let p1 = self.get(Position(x, y));
+                let r1 = p1.rgb.0 as u32;
+                let g1 = p1.rgb.1 as u32;
+                let b1 = p1.rgb.2 as u32;
+                let a1 = p1.a as u32;
                 self.set(
                     Position(x, y),
                     Pixel {
-                        rgb: RGB(r1 * a0 / 255, g1 * a0 / 255, b1 * a0 / 255),
-                        a: a1 * a0 / 255,
+                        rgb: RGB(
+                            (r1 * a0 / 255) as u8,
+                            (g1 * a0 / 255) as u8,
+                            (b1 * a0 / 255) as u8,
+                        ),
+                        a: (a1 * a0 / 255) as u8,
                     },
                 )
             }
@@ -292,107 +300,166 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
     let mut dir = Direction::Right;
     let mut bitmaps = vec![Bitmap::transparent()];
     let mut i = 0;
+    let enable_debug_prints = false;
     while rna.len() >= 7 {
-        println!("Step {}", i);
+        if enable_debug_prints {
+            println!("Step {}", i);
+        }
         match &rna[0..7] {
             b"PIPIIIC" => {
-                println!("+BLACK");
+                if enable_debug_prints {
+                    println!("+BLACK");
+                }
                 bucket.add_color(Color::RGB(BLACK));
             }
             b"PIPIIIP" => {
-                println!("+RED");
+                if enable_debug_prints {
+                    println!("+RED");
+                }
                 bucket.add_color(Color::RGB(RED));
             }
             b"PIPIICC" => {
-                println!("+GREEN");
+                if enable_debug_prints {
+                    println!("+GREEN");
+                }
                 bucket.add_color(Color::RGB(GREEN));
             }
             b"PIPIICF" => {
-                println!("+YELLOW");
+                if enable_debug_prints {
+                    println!("+YELLOW");
+                }
                 bucket.add_color(Color::RGB(YELLOW));
             }
             b"PIPIICP" => {
-                println!("+BLUE");
+                if enable_debug_prints {
+                    println!("+BLUE");
+                }
                 bucket.add_color(Color::RGB(BLUE));
             }
             b"PIPIIFC" => {
-                println!("+MAGENTA");
+                if enable_debug_prints {
+                    println!("+MAGENTA");
+                }
                 bucket.add_color(Color::RGB(MAGENTA));
             }
             b"PIPIIFF" => {
-                println!("+CYAN");
+                if enable_debug_prints {
+                    println!("+CYAN");
+                }
                 bucket.add_color(Color::RGB(CYAN));
             }
             b"PIPIIPC" => {
-                println!("+WHITE");
+                if enable_debug_prints {
+                    println!("+WHITE");
+                }
                 bucket.add_color(Color::RGB(WHITE));
             }
             b"PIPIIPF" => {
-                println!("+TRANSPARENT");
+                if enable_debug_prints {
+                    println!("+TRANSPARENT");
+                }
                 bucket.add_color(Color::Transparency(TRANSPARENT));
             }
             b"PIPIIPP" => {
-                println!("+OPAQUE");
+                if enable_debug_prints {
+                    println!("+OPAQUE");
+                }
                 bucket.add_color(Color::Transparency(OPAQUE));
             }
             b"PIIPICP" => {
-                println!("BUCKET CLEAR");
+                if enable_debug_prints {
+                    println!("BUCKET CLEAR");
+                }
                 bucket.clear();
             }
             b"PIIIIIP" => {
-                print!("pos: {} -> ", pos);
+                if enable_debug_prints {
+                    print!("pos: {} -> ", pos);
+                }
                 pos = pos.move_(dir);
-                println!("{}", pos);
+                if enable_debug_prints {
+                    println!("{}", pos);
+                }
             }
             b"PCCCCCP" => {
-                print!("dir: {:?} -> ", dir);
+                if enable_debug_prints {
+                    print!("dir: {:?} -> ", dir);
+                }
                 dir = dir.turn_ccw();
-                println!("{:?}", dir);
+                if enable_debug_prints {
+                    println!("{:?}", dir);
+                }
             }
             b"PFFFFFP" => {
-                print!("dir: {:?} -> ", dir);
+                if enable_debug_prints {
+                    print!("dir: {:?} -> ", dir);
+                }
                 dir = dir.turn_cw();
-                println!("{:?}", dir);
+                if enable_debug_prints {
+                    println!("{:?}", dir);
+                }
             }
             b"PCCIFFP" => {
-                println!("mark := {}", pos);
+                if enable_debug_prints {
+                    println!("mark := {}", pos);
+                }
                 mark = pos;
             }
             b"PFFICCP" => {
-                println!("line: {} -> {}", pos, mark);
+                if enable_debug_prints {
+                    println!("line: {} -> {}", pos, mark);
+                }
                 let idx = bitmaps.len() - 1;
                 bitmaps[idx].draw_line(pos, mark, bucket.current_pixel());
             }
             b"PIIPIIP" => {
-                println!("fill: {}", pos);
+                if enable_debug_prints {
+                    println!("fill: {}", pos);
+                }
                 let idx = bitmaps.len() - 1;
                 bitmaps[idx].fill(pos, bucket.current_pixel());
             }
             b"PCCPFFP" => {
                 if bitmaps.len() < 10 {
-                    crate::png_utils::write_bitmap_as_png(
+                    crate::png_utils::write_bitmap_as_png_rgba(
                         bitmaps.last().unwrap(),
                         std::fs::File::create(format!("./{}.png", i)).unwrap(),
                     )
                     .unwrap();
-                    println!("LAYER+");
+                    if enable_debug_prints {
+                        println!("LAYER+");
+                    }
                     bitmaps.push(Bitmap::transparent());
                 }
             }
             b"PFFPCCP" => {
-                println!("LAYER COMPOSE");
+                if enable_debug_prints {
+                    println!("LAYER COMPOSE");
+                }
                 if bitmaps.len() > 1 {
                     let bitmap = bitmaps.pop().unwrap();
                     let idx = bitmaps.len() - 1;
                     bitmaps[idx].compose_with(bitmap);
+                    crate::png_utils::write_bitmap_as_png_rgba(
+                        bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                    )
+                    .unwrap();
                 }
             }
             b"PFFICCF" => {
-                println!("LAYER CLIP");
+                if enable_debug_prints {
+                    println!("LAYER CLIP");
+                }
                 if bitmaps.len() > 1 {
                     let bitmap = bitmaps.pop().unwrap();
                     let idx = bitmaps.len() - 1;
                     bitmaps[idx].clip_with(bitmap);
+                    crate::png_utils::write_bitmap_as_png_rgba(
+                        bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                    )
+                    .unwrap();
                 }
             }
             _ => {}
@@ -400,7 +467,9 @@ pub fn build(mut rna: &[u8]) -> Bitmap {
         rna = &rna[7..];
         i += 1;
     }
-    println!("Layers count: {}", bitmaps.len());
+    if enable_debug_prints {
+        println!("Layers count: {}", bitmaps.len());
+    }
     bitmaps.pop().unwrap()
 }
 
