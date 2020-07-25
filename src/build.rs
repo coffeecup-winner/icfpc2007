@@ -293,184 +293,261 @@ const WHITE: RGB = RGB(255, 255, 255);
 const TRANSPARENT: u8 = 0;
 const OPAQUE: u8 = 255;
 
-pub fn build(mut rna: &[u8]) -> Bitmap {
-    let mut bucket = Bucket::new();
-    let mut pos = Position(0, 0);
-    let mut mark = Position(0, 0);
-    let mut dir = Direction::Right;
-    let mut bitmaps = vec![Bitmap::transparent()];
-    let mut i = 0;
-    let enable_debug_prints = false;
-    while rna.len() >= 7 {
-        if enable_debug_prints {
-            println!("Step {}", i);
+#[derive(Debug, PartialEq, Clone)]
+pub enum Command {
+    AddBlack,
+    AddRed,
+    AddGreen,
+    AddYellow,
+    AddBlue,
+    AddMagenta,
+    AddCyan,
+    AddWhite,
+    AddTransparent,
+    AddOpaque,
+    ClearBucket,
+    Move,
+    TurnCcw,
+    TurnCw,
+    Mark,
+    DrawLine,
+    Fill,
+    AddLayer,
+    Compose,
+    Clip,
+    Unknown(Vec<u8>),
+}
+
+pub fn build(rna: &[u8]) -> Bitmap {
+    let mut builder = BuilderState::new(rna);
+    for _ in 0..builder.commands.len() {
+        builder.step();
+    }
+    builder.bitmaps.pop().unwrap()
+}
+
+pub struct BuilderState {
+    bucket: Bucket,
+    pos: Position,
+    mark: Position,
+    dir: Direction,
+    bitmaps: Vec<Bitmap>,
+    pub commands: Vec<Command>,
+    pub iteration: u32,
+    enable_debug_prints: bool,
+}
+
+impl BuilderState {
+    pub fn new(mut rna: &[u8]) -> Self {
+        let mut commands = vec![];
+        while rna.len() >= 7 {
+            commands.push(match &rna[0..7] {
+                b"PIPIIIC" => Command::AddBlack,
+                b"PIPIIIP" => Command::AddRed,
+                b"PIPIICC" => Command::AddGreen,
+                b"PIPIICF" => Command::AddYellow,
+                b"PIPIICP" => Command::AddBlue,
+                b"PIPIIFC" => Command::AddMagenta,
+                b"PIPIIFF" => Command::AddCyan,
+                b"PIPIIPC" => Command::AddWhite,
+                b"PIPIIPF" => Command::AddTransparent,
+                b"PIPIIPP" => Command::AddOpaque,
+                b"PIIPICP" => Command::ClearBucket,
+                b"PIIIIIP" => Command::Move,
+                b"PCCCCCP" => Command::TurnCcw,
+                b"PFFFFFP" => Command::TurnCw,
+                b"PCCIFFP" => Command::Mark,
+                b"PFFICCP" => Command::DrawLine,
+                b"PIIPIIP" => Command::Fill,
+                b"PCCPFFP" => Command::AddLayer,
+                b"PFFPCCP" => Command::Compose,
+                b"PFFICCF" => Command::Clip,
+                b => Command::Unknown(b.iter().cloned().collect()),
+            });
+            rna = &rna[7..];
         }
-        match &rna[0..7] {
-            b"PIPIIIC" => {
-                if enable_debug_prints {
+        BuilderState {
+            bucket: Bucket::new(),
+            pos: Position(0, 0),
+            mark: Position(0, 0),
+            dir: Direction::Right,
+            bitmaps: vec![Bitmap::transparent()],
+            commands,
+            iteration: 0,
+            enable_debug_prints: false,
+        }
+    }
+
+    pub fn step(&mut self) -> &Bitmap {
+        if self.enable_debug_prints {
+            println!("Step {}", self.iteration);
+        }
+        match &self.commands[self.iteration as usize] {
+            Command::AddBlack => {
+                if self.enable_debug_prints {
                     println!("+BLACK");
                 }
-                bucket.add_color(Color::RGB(BLACK));
+                self.bucket.add_color(Color::RGB(BLACK));
             }
-            b"PIPIIIP" => {
-                if enable_debug_prints {
+            Command::AddRed => {
+                if self.enable_debug_prints {
                     println!("+RED");
                 }
-                bucket.add_color(Color::RGB(RED));
+                self.bucket.add_color(Color::RGB(RED));
             }
-            b"PIPIICC" => {
-                if enable_debug_prints {
+            Command::AddGreen => {
+                if self.enable_debug_prints {
                     println!("+GREEN");
                 }
-                bucket.add_color(Color::RGB(GREEN));
+                self.bucket.add_color(Color::RGB(GREEN));
             }
-            b"PIPIICF" => {
-                if enable_debug_prints {
+            Command::AddYellow => {
+                if self.enable_debug_prints {
                     println!("+YELLOW");
                 }
-                bucket.add_color(Color::RGB(YELLOW));
+                self.bucket.add_color(Color::RGB(YELLOW));
             }
-            b"PIPIICP" => {
-                if enable_debug_prints {
+            Command::AddBlue => {
+                if self.enable_debug_prints {
                     println!("+BLUE");
                 }
-                bucket.add_color(Color::RGB(BLUE));
+                self.bucket.add_color(Color::RGB(BLUE));
             }
-            b"PIPIIFC" => {
-                if enable_debug_prints {
+            Command::AddMagenta => {
+                if self.enable_debug_prints {
                     println!("+MAGENTA");
                 }
-                bucket.add_color(Color::RGB(MAGENTA));
+                self.bucket.add_color(Color::RGB(MAGENTA));
             }
-            b"PIPIIFF" => {
-                if enable_debug_prints {
+            Command::AddCyan => {
+                if self.enable_debug_prints {
                     println!("+CYAN");
                 }
-                bucket.add_color(Color::RGB(CYAN));
+                self.bucket.add_color(Color::RGB(CYAN));
             }
-            b"PIPIIPC" => {
-                if enable_debug_prints {
+            Command::AddWhite => {
+                if self.enable_debug_prints {
                     println!("+WHITE");
                 }
-                bucket.add_color(Color::RGB(WHITE));
+                self.bucket.add_color(Color::RGB(WHITE));
             }
-            b"PIPIIPF" => {
-                if enable_debug_prints {
+            Command::AddTransparent => {
+                if self.enable_debug_prints {
                     println!("+TRANSPARENT");
                 }
-                bucket.add_color(Color::Transparency(TRANSPARENT));
+                self.bucket.add_color(Color::Transparency(TRANSPARENT));
             }
-            b"PIPIIPP" => {
-                if enable_debug_prints {
+            Command::AddOpaque => {
+                if self.enable_debug_prints {
                     println!("+OPAQUE");
                 }
-                bucket.add_color(Color::Transparency(OPAQUE));
+                self.bucket.add_color(Color::Transparency(OPAQUE));
             }
-            b"PIIPICP" => {
-                if enable_debug_prints {
+            Command::ClearBucket => {
+                if self.enable_debug_prints {
                     println!("BUCKET CLEAR");
                 }
-                bucket.clear();
+                self.bucket.clear();
             }
-            b"PIIIIIP" => {
-                if enable_debug_prints {
-                    print!("pos: {} -> ", pos);
+            Command::Move => {
+                if self.enable_debug_prints {
+                    print!("pos: {} -> ", self.pos);
                 }
-                pos = pos.move_(dir);
-                if enable_debug_prints {
-                    println!("{}", pos);
-                }
-            }
-            b"PCCCCCP" => {
-                if enable_debug_prints {
-                    print!("dir: {:?} -> ", dir);
-                }
-                dir = dir.turn_ccw();
-                if enable_debug_prints {
-                    println!("{:?}", dir);
+                self.pos = self.pos.move_(self.dir);
+                if self.enable_debug_prints {
+                    println!("{}", self.pos);
                 }
             }
-            b"PFFFFFP" => {
-                if enable_debug_prints {
-                    print!("dir: {:?} -> ", dir);
+            Command::TurnCcw => {
+                if self.enable_debug_prints {
+                    print!("dir: {:?} -> ", self.dir);
                 }
-                dir = dir.turn_cw();
-                if enable_debug_prints {
-                    println!("{:?}", dir);
+                self.dir = self.dir.turn_ccw();
+                if self.enable_debug_prints {
+                    println!("{:?}", self.dir);
                 }
             }
-            b"PCCIFFP" => {
-                if enable_debug_prints {
-                    println!("mark := {}", pos);
+            Command::TurnCw => {
+                if self.enable_debug_prints {
+                    print!("dir: {:?} -> ", self.dir);
                 }
-                mark = pos;
-            }
-            b"PFFICCP" => {
-                if enable_debug_prints {
-                    println!("line: {} -> {}", pos, mark);
+                self.dir = self.dir.turn_cw();
+                if self.enable_debug_prints {
+                    println!("{:?}", self.dir);
                 }
-                let idx = bitmaps.len() - 1;
-                bitmaps[idx].draw_line(pos, mark, bucket.current_pixel());
             }
-            b"PIIPIIP" => {
-                if enable_debug_prints {
-                    println!("fill: {}", pos);
+            Command::Mark => {
+                if self.enable_debug_prints {
+                    println!("mark := {}", self.pos);
                 }
-                let idx = bitmaps.len() - 1;
-                bitmaps[idx].fill(pos, bucket.current_pixel());
+                self.mark = self.pos;
             }
-            b"PCCPFFP" => {
-                if bitmaps.len() < 10 {
+            Command::DrawLine => {
+                if self.enable_debug_prints {
+                    println!("line: {} -> {}", self.pos, self.mark);
+                }
+                let idx = self.bitmaps.len() - 1;
+                self.bitmaps[idx].draw_line(self.pos, self.mark, self.bucket.current_pixel());
+            }
+            Command::Fill => {
+                if self.enable_debug_prints {
+                    println!("fill: {}", self.pos);
+                }
+                let idx = self.bitmaps.len() - 1;
+                self.bitmaps[idx].fill(self.pos, self.bucket.current_pixel());
+            }
+            Command::AddLayer => {
+                if self.bitmaps.len() < 10 {
                     crate::png_utils::write_bitmap_as_png_rgba(
-                        bitmaps.last().unwrap(),
-                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                        self.bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", self.iteration)).unwrap(),
                     )
                     .unwrap();
-                    if enable_debug_prints {
+                    if self.enable_debug_prints {
                         println!("LAYER+");
                     }
-                    bitmaps.push(Bitmap::transparent());
+                    self.bitmaps.push(Bitmap::transparent());
                 }
             }
-            b"PFFPCCP" => {
-                if enable_debug_prints {
+            Command::Compose => {
+                if self.enable_debug_prints {
                     println!("LAYER COMPOSE");
                 }
-                if bitmaps.len() > 1 {
-                    let bitmap = bitmaps.pop().unwrap();
-                    let idx = bitmaps.len() - 1;
-                    bitmaps[idx].compose_with(bitmap);
+                if self.bitmaps.len() > 1 {
+                    let bitmap = self.bitmaps.pop().unwrap();
+                    let idx = self.bitmaps.len() - 1;
+                    self.bitmaps[idx].compose_with(bitmap);
                     crate::png_utils::write_bitmap_as_png_rgba(
-                        bitmaps.last().unwrap(),
-                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                        self.bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", self.iteration)).unwrap(),
                     )
                     .unwrap();
                 }
             }
-            b"PFFICCF" => {
-                if enable_debug_prints {
+            Command::Clip => {
+                if self.enable_debug_prints {
                     println!("LAYER CLIP");
                 }
-                if bitmaps.len() > 1 {
-                    let bitmap = bitmaps.pop().unwrap();
-                    let idx = bitmaps.len() - 1;
-                    bitmaps[idx].clip_with(bitmap);
+                if self.bitmaps.len() > 1 {
+                    let bitmap = self.bitmaps.pop().unwrap();
+                    let idx = self.bitmaps.len() - 1;
+                    self.bitmaps[idx].clip_with(bitmap);
                     crate::png_utils::write_bitmap_as_png_rgba(
-                        bitmaps.last().unwrap(),
-                        std::fs::File::create(format!("./{}.png", i)).unwrap(),
+                        self.bitmaps.last().unwrap(),
+                        std::fs::File::create(format!("./{}.png", self.iteration)).unwrap(),
                     )
                     .unwrap();
                 }
             }
-            _ => {}
+            Command::Unknown(b) => {
+                if self.enable_debug_prints {
+                    println!("UNKNOWN: {:?}", b);
+                }
+            }
         }
-        rna = &rna[7..];
-        i += 1;
+        self.iteration += 1;
+        self.bitmaps.last().unwrap()
     }
-    if enable_debug_prints {
-        println!("Layers count: {}", bitmaps.len());
-    }
-    bitmaps.pop().unwrap()
 }
 
 #[cfg(test)]

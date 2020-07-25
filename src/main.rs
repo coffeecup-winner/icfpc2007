@@ -4,14 +4,11 @@ mod build;
 mod exec;
 mod png_utils;
 mod types;
-mod ui_main;
-mod ui_system;
 
 use build::build;
 use exec::execute;
 use png_utils::write_bitmap_as_png;
 use types::to_u8_vec;
-use ui_main::ui_main;
 
 fn usage() -> std::io::Result<()> {
     eprintln!("Usage:
@@ -29,15 +26,12 @@ fn main() -> std::io::Result<()> {
     let file1 = env::args().nth(3).unwrap();
     match &command[..] {
         "execute" => {
-            let rna = execute(b"", &fs::read(file0)?);
+            let rna = execute(b"IIPIFFCPICICIICPIICIPPPICIIC", &fs::read(file0)?);
             fs::write(file1, to_u8_vec(&rna))?;
         }
         "build" => {
             let bitmap = build(&fs::read(file0)?);
             write_bitmap_as_png(&bitmap, fs::File::create(file1)?)?;
-        }
-        "ui" => {
-            ui_main(file0, file1);
         }
         _ => return usage(),
     }
