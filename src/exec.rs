@@ -3,10 +3,11 @@ use std::time::Instant;
 
 use crate::types::*;
 
-struct ExecutionState {
+pub struct ExecutionState {
     dna: DNA,
-    rna: Vec<Base>,
-    enable_debug_prints: bool,
+    pub rna: Vec<Base>,
+    iteration: u32,
+    pub enable_debug_prints: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,7 +68,9 @@ impl std::fmt::Display for Template {
 
 pub fn execute(prefix: &[u8], dna: &[u8]) -> Vec<Base> {
     let mut state = ExecutionState::new(prefix, dna);
-    state.execute().unwrap_err(); // The implementation can only return an expected "error"
+    while state.step() {
+        // Do nothing
+    }
     return state.rna;
 }
 
@@ -76,39 +79,44 @@ struct EarlyFinish;
 type CanFinishEarly<T> = Result<T, EarlyFinish>;
 
 impl ExecutionState {
-    fn new(prefix: &[u8], dna_base: &[u8]) -> Self {
+    pub fn new(prefix: &[u8], dna_base: &[u8]) -> Self {
         ExecutionState {
             dna: DNA::new(&vec![to_base_vec(prefix), to_base_vec(dna_base)]),
             rna: vec![],
+            iteration: 0,
             enable_debug_prints: false,
         }
     }
 
-    fn execute(&mut self) -> CanFinishEarly<()> {
-        let mut i = 0;
-        loop {
-            if self.enable_debug_prints {
-                println!("iteration {}", i);
-                println!("dna length: {}", self.dna.len());
-            }
-            let time = Instant::now();
-            let pattern = self.pattern()?;
-            let template = self.template()?;
-            if self.enable_debug_prints {
-                println!("pattern: {}", pattern);
-                println!("template: {}", template);
-            }
-            self.match_replace(pattern, template);
-            if time.elapsed().as_millis() > 10 {
-                println!("SLOW ITERATION {}: {}ms", i, time.elapsed().as_millis());
-                self.dna.debug_print();
-            }
-            if self.enable_debug_prints {
-                println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
-                println!();
-            }
-            i += 1;
+    pub fn step(&mut self) -> bool {
+        if self.enable_debug_prints {
+            println!("iteration {}", self.iteration);
+            println!("dna length: {}", self.dna.len());
         }
+        let time = Instant::now();
+        let pattern = match self.pattern() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        let template = match self.template() {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        if self.enable_debug_prints {
+            println!("pattern: {}", pattern);
+            println!("template: {}", template);
+        }
+        self.match_replace(pattern, template);
+        if time.elapsed().as_millis() > 10 {
+            println!("SLOW ITERATION {}: {}ms", self.iteration, time.elapsed().as_millis());
+            self.dna.debug_print();
+        }
+        if self.enable_debug_prints {
+            println!("rna length: {} ({})", self.rna.len() / 7, self.rna.len());
+            println!();
+        }
+        self.iteration += 1;
+        true
     }
 
     fn match_replace(&mut self, pattern: Pattern, template: Template) {

@@ -1,6 +1,8 @@
 use std::cell::Cell;
 use std::collections::{HashSet, VecDeque};
 
+use crate::types::*;
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Position(pub u32, pub u32);
 
@@ -315,11 +317,11 @@ pub enum Command {
     AddLayer,
     Compose,
     Clip,
-    Unknown(Vec<u8>),
+    Unknown(Vec<Base>),
 }
 
 pub fn build(rna: &[u8]) -> Bitmap {
-    let mut builder = BuilderState::new(rna);
+    let mut builder = BuilderState::new(&to_base_vec(rna));
     for _ in 0..builder.commands.len() {
         builder.step();
     }
@@ -331,51 +333,59 @@ pub struct BuilderState {
     pos: Position,
     mark: Position,
     dir: Direction,
-    bitmaps: Vec<Bitmap>,
+    pub bitmaps: Vec<Bitmap>,
     pub commands: Vec<Command>,
     pub iteration: u32,
-    enable_debug_prints: bool,
+    pub enable_debug_prints: bool,
 }
 
 impl BuilderState {
-    pub fn new(mut rna: &[u8]) -> Self {
-        let mut commands = vec![];
-        while rna.len() >= 7 {
-            commands.push(match &rna[0..7] {
-                b"PIPIIIC" => Command::AddBlack,
-                b"PIPIIIP" => Command::AddRed,
-                b"PIPIICC" => Command::AddGreen,
-                b"PIPIICF" => Command::AddYellow,
-                b"PIPIICP" => Command::AddBlue,
-                b"PIPIIFC" => Command::AddMagenta,
-                b"PIPIIFF" => Command::AddCyan,
-                b"PIPIIPC" => Command::AddWhite,
-                b"PIPIIPF" => Command::AddTransparent,
-                b"PIPIIPP" => Command::AddOpaque,
-                b"PIIPICP" => Command::ClearBucket,
-                b"PIIIIIP" => Command::Move,
-                b"PCCCCCP" => Command::TurnCcw,
-                b"PFFFFFP" => Command::TurnCw,
-                b"PCCIFFP" => Command::Mark,
-                b"PFFICCP" => Command::DrawLine,
-                b"PIIPIIP" => Command::Fill,
-                b"PCCPFFP" => Command::AddLayer,
-                b"PFFPCCP" => Command::Compose,
-                b"PFFICCF" => Command::Clip,
-                b => Command::Unknown(b.iter().cloned().collect()),
-            });
-            rna = &rna[7..];
-        }
+    pub fn new(rna: &[Base]) -> Self {
         BuilderState {
             bucket: Bucket::new(),
             pos: Position(0, 0),
             mark: Position(0, 0),
             dir: Direction::Right,
             bitmaps: vec![Bitmap::transparent()],
-            commands,
+            commands: Self::convert_rna_to_commands(rna),
             iteration: 0,
             enable_debug_prints: false,
         }
+    }
+
+    pub fn extend(&mut self, rna: &[Base]) {
+        self.commands.extend(Self::convert_rna_to_commands(rna));
+    }
+
+    fn convert_rna_to_commands(mut rna: &[Base]) -> Vec<Command> {
+        let mut commands = vec![];
+        while rna.len() >= 7 {
+            commands.push(match &rna[0..7] {
+                &[P, I, P, I, I, I, C] => Command::AddBlack,
+                &[P, I, P, I, I, I, P] => Command::AddRed,
+                &[P, I, P, I, I, C, C] => Command::AddGreen,
+                &[P, I, P, I, I, C, F] => Command::AddYellow,
+                &[P, I, P, I, I, C, P] => Command::AddBlue,
+                &[P, I, P, I, I, F, C] => Command::AddMagenta,
+                &[P, I, P, I, I, F, F] => Command::AddCyan,
+                &[P, I, P, I, I, P, C] => Command::AddWhite,
+                &[P, I, P, I, I, P, F] => Command::AddTransparent,
+                &[P, I, P, I, I, P, P] => Command::AddOpaque,
+                &[P, I, I, P, I, C, P] => Command::ClearBucket,
+                &[P, I, I, I, I, I, P] => Command::Move,
+                &[P, C, C, C, C, C, P] => Command::TurnCcw,
+                &[P, F, F, F, F, F, P] => Command::TurnCw,
+                &[P, C, C, I, F, F, P] => Command::Mark,
+                &[P, F, F, I, C, C, P] => Command::DrawLine,
+                &[P, I, I, P, I, I, P] => Command::Fill,
+                &[P, C, C, P, F, F, P] => Command::AddLayer,
+                &[P, F, F, P, C, C, P] => Command::Compose,
+                &[P, F, F, I, C, C, F] => Command::Clip,
+                b => Command::Unknown(b.iter().cloned().collect()),
+            });
+            rna = &rna[7..];
+        }
+        commands
     }
 
     pub fn step(&mut self) -> &Bitmap {
@@ -547,6 +557,21 @@ impl BuilderState {
         }
         self.iteration += 1;
         self.bitmaps.last().unwrap()
+    }
+
+    pub fn draw_debug_overlay(&self, bitmap: &mut Bitmap) {
+        let mut pos = self.pos;
+        let mut pixel = Pixel { rgb: RED, a: 128 };
+        bitmap.set(pos.move_(Direction::Up), pixel);
+        bitmap.set(pos.move_(Direction::Right), pixel);
+        bitmap.set(pos.move_(Direction::Down), pixel);
+        bitmap.set(pos.move_(Direction::Left), pixel);
+        pos = self.mark;
+        pixel = Pixel { rgb: GREEN, a: 128 };
+        bitmap.set(pos.move_(Direction::Up), pixel);
+        bitmap.set(pos.move_(Direction::Right), pixel);
+        bitmap.set(pos.move_(Direction::Down), pixel);
+        bitmap.set(pos.move_(Direction::Left), pixel);
     }
 }
 
